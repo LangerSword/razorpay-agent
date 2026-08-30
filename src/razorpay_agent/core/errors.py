@@ -1,0 +1,2 @@
+class ContractViolation(ValueError):
+    pass
