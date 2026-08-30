@@ -1,25 +1,20 @@
 # razorpay-agent
 
-A merchant-side decisioning agent for the Razorpay Buildathon. It proposes
-discounts and bundle upsells to an AI buyer over the Agentic Commerce Protocol,
-and settles them through Razorpay. Every money move is explainable, bounded, and
-gated — with an audit trail and one failure handled gracefully. No LLM anywhere.
+> Discounts and bundle upsells to an AI buyer, over the Agentic Commerce
+> Protocol, settled through Razorpay — every money move explainable, bounded,
+> and gated, with an audit trail and one failure handled gracefully. **No LLM.**
 
-## The bar
+Built for the Razorpay AI Builders' Buildathon (Track 01 — AI Growth & Agentic Commerce).
 
-> Every money action explainable, bounded and gated. Show the audit trail and
-> one failure handled gracefully.
+## The brief's bar
 
-- **Explainable** — each proposal is a `ProposedAction`; each decision a
-  `GateDecision` carrying the reason and the limits it was checked against.
-- **Bounded** — the rule layer caps discount %, rupee value, bundle share,
-  offers per session, and the buyer's allowance. The bandit is advisory only.
-- **Gated** — nothing acts without the gate, and the gate always wins.
-- **Audited** — one `AuditEntry` per proposal, finalized as `accepted`,
-  `declined`, or `failed`.
-- **One failure** — a declined payment rolls back to `not_ready_for_payment`
-  and is never retried. A watchdog also demotes the bandit if it drifts from
-  baseline.
+| | |
+|---|---|
+| **Explainable** | each proposal is a `ProposedAction`; each decision a `GateDecision` with its reason and the limits it was checked against |
+| **Bounded** | the rule layer caps discount %, rupee value, bundle share, offers per session, and the buyer's allowance; the bandit is advisory only |
+| **Gated** | nothing acts without the gate, and the gate always wins |
+| **Audited** | one `AuditEntry` per proposal, finalized `accepted` / `declined` / `failed` |
+| **One failure** | a declined payment rolls back and is never retried; a watchdog demotes the bandit if it drifts from baseline |
 
 ## How it fits
 
@@ -33,11 +28,10 @@ buyer (ACP) ─▶ /checkout_sessions ─▶ OfferPipeline
         Watchdog (demotes)
 ```
 
-The spine is a tiny Core Contract — `ProposedAction`, `GateDecision`,
-`AuditEntry` — and one rule: nothing acts without the gate, nothing happens
-unrecorded. Everything else is a swappable module.
-
-`architecture.md` explains *why*; `prompt.md` governs *how* you change it.
+A tiny Core Contract — `ProposedAction`, `GateDecision`, `AuditEntry` — plus one
+rule: *nothing acts without the gate, nothing happens unrecorded.* Everything
+else is a swappable module. `architecture.md` explains *why*; `prompt.md`
+governs *how* you change it.
 
 ## Quick start
 
@@ -45,15 +39,15 @@ Requires Python 3.11+.
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                                  # 200+ tests, fuzzing + eval harness
+pytest -q                                 # 200+ tests
 
-python demo/run_demo.py                    # scripted, no creds needed
-python demo/run_full_demo.py --wait 900    # accept · gate-cap · failure · live settlement
-python demo/verify_demo.py                 # assert the brief's bar was met
+python demo/run_demo.py                   # scripted, no creds needed
+python demo/run_full_demo.py --wait 900   # accept · gate-cap · failure · live settlement
+python demo/verify_demo.py                # assert the brief's bar was met
 ```
 
 Live settlement needs `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in `.env`
-(gitignored). Without them the server falls back loudly to the scripted
+(gitignored); without them the server falls back loudly to the scripted
 provider. Run the server with `python run_server.py`.
 
 ## Demos — `demo/`
@@ -70,8 +64,7 @@ provider. Run the server with `python run_server.py`.
 
 ## Surface
 
-ACP checkout endpoints (`/products`, `/checkout_sessions` + complete/cancel)
-plus:
+ACP checkout endpoints (`/products`, `/checkout_sessions` + complete/cancel) plus:
 
 - `GET  /eval/report` — uplift, compliance, regret, with a honesty note
 - `GET  /eval/offpolicy?alpha=0.25` — counterfactual for a different exploration setting
