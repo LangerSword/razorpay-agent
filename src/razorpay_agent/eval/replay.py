@@ -3,8 +3,10 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from razorpay_agent.checkout.catalog import DEMO_CATALOG
 from razorpay_agent.core.actions import ProposedAction
-from razorpay_agent.decision.arms import BundleArm, DiscountArm
+from razorpay_agent.decision.arms import Arm, BundleArm, DiscountArm
+from razorpay_agent.decision.co_purchase_graph import CoPurchaseGraph
 from razorpay_agent.decision.context import ContextEncoder, DecisionContext
 from razorpay_agent.decision.linucb import LinUCBPolicy
 from razorpay_agent.eval.storage import EvalStore
@@ -14,12 +16,24 @@ from razorpay_agent.eval.synthetic import (
     SimSession,
     SimulatedBuyerModel,
     expected_net_revenue,
+    is_deep_discount_arm,
     realized_net_revenue,
 )
 from razorpay_agent.gate.context import SessionContext
 from razorpay_agent.gate.gate import RulePolicyGate, RulePolicyGateConfig
 
-EVAL_DISCOUNT_ARMS = (5.0, 10.0, 15.0, 20.0)
+# Documented-prior regimen graph the simulator reads bundle relevance from. The reward
+# formula shape is unchanged; only the source of the "is this bundle relevant?" flag
+# moves from naive category equality to this graph lookup.
+_DEFAULT_REGIMEN = CoPurchaseGraph.from_catalog(DEMO_CATALOG)
+
+EVAL_DISCOUNT_ARMS = (5.0, 10.0, 15.0, 20.0, 25.0, 35.0, 40.0)
+
+# Seeded round-robin warmup: force every arm an equal, known number of times at the
+# start of pretraining so no arm is starved of samples (LinUCB's exploration bonus is
+# swamped by the rupee-scale reward, which otherwise leaves deep arms untrained). Each
+# arm gets WARMUP_PER_ARM samples spread across both normal and stagnant contexts.
+WARMUP_PER_ARM = 250
 
 BUNDLE_ITEM_CATEGORIES: dict[str, tuple[str, float]] = {
     "sku-socks": ("apparel", 499.0),
@@ -61,14 +75,18 @@ def build_eval_arms() -> tuple[EvalArm, ...]:
     return tuple(arms)
 
 
-def sim_offer_for_arm(arm: EvalArm, session: SimSession) -> SimOffer:
+def sim_offer_for_arm(
+    arm: EvalArm, session: SimSession, regimen_graph: CoPurchaseGraph | None = None
+) -> SimOffer:
     if arm.kind == "discount":
         return SimOffer(kind="discount", discount_percent=arm.discount_percent)
+    regimen_graph = regimen_graph or _DEFAULT_REGIMEN
     item_category = BUNDLE_ITEM_CATEGORIES[arm.bundle_item][0]
+    relevant = regimen_graph.relevant_categories(session.category)
     return SimOffer(
         kind="bundle",
         bundle_price_rupees=arm.bundle_price_rupees,
-        bundle_category_match=(item_category == session.category),
+        bundle_category_match=item_category in relevant,
     )
 
 
@@ -111,6 +129,8 @@ def run_offline_validation(
             item_category=session.category,
             cart_value_inr=session.cart_value_rupees,
             buyer_allowance_inr=session.allowance_rupees,
+            is_stagnant=session.is_stagnant,
+            days_in_stock=session.days_in_stock,
         )
         best_expected = max(
             [expected_net_revenue(session, sim_offer_for_arm(arm, session)) for arm in all_arms]
@@ -156,6 +176,7 @@ def pretrain_policy(
     n_sessions: int,
     seed: int,
     gate_config: RulePolicyGateConfig | None = None,
+    temperature: float = 0.0,
 ) -> LinUCBPolicy:
     gate_config = gate_config or RulePolicyGateConfig(
         fallback_bundle_item=FALLBACK_ITEM,
@@ -173,6 +194,39 @@ def pretrain_policy(
     ]
     policy = LinUCBPolicy(linucb_arms, ContextEncoder(CATEGORIES), alpha=0.5)
 
+    # Stratified round-robin warmup: each arm is forced WARMUP_PER_ARM times in
+    # EACH context class (normal and stagnant), so every arm gets enough
+    # samples of the rarer stagnant context to learn its completion-probability
+    # signal. The plan is INTERLEAVED arm-by-arm (not arm-ordered) so that any
+    # prefix of the training run still forces every arm at least once -- otherwise,
+    # with a long per-arm count and fewer total sessions, the later arms would
+    # never be forced and would stay untrained. This is an exploration guarantee,
+    # not a reward tweak.
+    warmup_plan: list[tuple["Arm", bool]] = []
+    for _ in range(WARMUP_PER_ARM):
+        for arm in linucb_arms:
+            for want_stagnant in (False, True):
+                if (
+                    want_stagnant
+                    and isinstance(arm, DiscountArm)
+                    and not is_deep_discount_arm(arm.arm_id)
+                ):
+                    # Token discounts are never offered for stagnant sessions, so
+                    # do not force-train them there.
+                    continue
+                warmup_plan.append((arm, want_stagnant))
+    warmup_total = min(len(warmup_plan), n_sessions)
+
+    gen_index = n_sessions
+
+    def session_of_class(want_stagnant: bool) -> SimSession:
+        nonlocal gen_index
+        while True:
+            session = buyer.session(gen_index)
+            gen_index += 1
+            if session.is_stagnant == want_stagnant:
+                return session
+
     for index in range(n_sessions):
         session = buyer.session(index)
         context = DecisionContext(
@@ -181,8 +235,30 @@ def pretrain_policy(
             item_category=session.category,
             cart_value_inr=session.cart_value_rupees,
             buyer_allowance_inr=session.allowance_rupees,
+            is_stagnant=session.is_stagnant,
+            days_in_stock=session.days_in_stock,
         )
-        _play_bandit_step(policy, gate, buyer, session, context, index, 0.0)
+        if index < warmup_total:
+            forced_arm, want_stagnant = warmup_plan[index]
+            warmup_session = session_of_class(want_stagnant)
+            warmup_context = DecisionContext(
+                session_id=f"pretrain-{seed}-w{index}",
+                target_sku=f"sim-sku-w{index}",
+                item_category=warmup_session.category,
+                cart_value_inr=warmup_session.cart_value_rupees,
+                buyer_allowance_inr=warmup_session.allowance_rupees,
+                is_stagnant=warmup_session.is_stagnant,
+                days_in_stock=warmup_session.days_in_stock,
+            )
+            forced = (forced_arm.arm_id, _action_for_arm(forced_arm, warmup_context))
+            _play_bandit_step(
+                policy, gate, buyer, warmup_session, warmup_context, index, 0.0, forced=forced
+            )
+        else:
+            _play_bandit_step(
+                policy, gate, buyer, session, context, index, 0.0,
+                forced=None, temperature=temperature, rng=buyer._rng,
+            )
 
     return policy
 
@@ -193,6 +269,7 @@ def _gate_context(session: SimSession, session_id: str) -> SessionContext:
         cart_value_inr=session.cart_value_rupees,
         buyer_allowance_inr=session.allowance_rupees,
         already_offered=False,
+        is_stagnant=session.is_stagnant,
     )
 
 
@@ -206,17 +283,46 @@ def _simulate_reward(buyer: SimulatedBuyerModel, session: SimSession, offer: Sim
     return realized_net_revenue(session, offer, response)
 
 
-def _action_to_sim_offer(action: ProposedAction, session: SimSession) -> SimOffer | None:
+def _action_to_sim_offer(
+    action: ProposedAction,
+    session: SimSession,
+    regimen_graph: CoPurchaseGraph | None = None,
+) -> SimOffer | None:
     if action.action_type == "discount":
         return SimOffer(kind="discount", discount_percent=float(action.discount_percent))
-    match = (
-        action.bundle_item in BUNDLE_ITEM_CATEGORIES
-        and BUNDLE_ITEM_CATEGORIES[action.bundle_item][0] == session.category
-    )
+    regimen_graph = regimen_graph or _DEFAULT_REGIMEN
+    match = False
+    if action.bundle_item in BUNDLE_ITEM_CATEGORIES:
+        item_category = BUNDLE_ITEM_CATEGORIES[action.bundle_item][0]
+        match = item_category in regimen_graph.relevant_categories(session.category)
     return SimOffer(
         kind="bundle",
         bundle_price_rupees=float(action.bundle_price),
         bundle_category_match=match,
+    )
+
+
+def _action_for_arm(arm: "Arm", context: DecisionContext) -> ProposedAction:
+    """Build the ProposedAction a bandit arm would emit (used for forced warmup)."""
+    if isinstance(arm, DiscountArm):
+        return ProposedAction(
+            action_type="discount",
+            target=context.target_sku,
+            expected_uplift=0.0,
+            confidence=0.0,
+            source="linucb_bandit",
+            session_id=context.session_id,
+            discount_percent=float(arm.discount_percent),
+        )
+    return ProposedAction(
+        action_type="bundle_upsell",
+        target=arm.bundle_item,
+        expected_uplift=0.0,
+        confidence=0.0,
+        source="linucb_bandit",
+        session_id=context.session_id,
+        bundle_item=arm.bundle_item,
+        bundle_price=float(arm.bundle_price),
     )
 
 
@@ -231,7 +337,7 @@ def _offers_equivalent(proposed: ProposedAction, final: ProposedAction) -> bool:
     )
 
 
-def _play_bandit_step(policy, gate, buyer, session, context, index, best_expected) -> dict:
+def _play_bandit_step(policy, gate, buyer, session, context, index, best_expected, forced=None, temperature=0.0, rng=None) -> dict:
     step = {
         "step_index": index * 2,
         "policy": "bandit",
@@ -245,7 +351,23 @@ def _play_bandit_step(policy, gate, buyer, session, context, index, best_expecte
         "best_expected": best_expected,
     }
 
-    arm_id, action = policy.propose_with_arm(context)
+    if forced is not None:
+        arm_id, action = forced
+    else:
+        # Softmax sampling (temperature > 0) for exploration, else greedy
+        # argmax. For stagnant sessions, restrict discount arms to the
+        # deeper ones (a token discount does not clear dead stock), with
+        # the bundle upsell kept as a valid alternative.
+        allowed = None
+        if session.is_stagnant:
+            allowed = [
+                aid
+                for aid in policy.arm_ids
+                if aid.startswith("b") or is_deep_discount_arm(aid)
+            ]
+        arm_id, action = policy.propose_with_arm(
+            context, allowed_arm_ids=allowed, temperature=temperature, rng=rng
+        )
     if action is None:
         return step
     step["arm_id"] = arm_id

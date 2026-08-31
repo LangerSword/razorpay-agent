@@ -32,6 +32,10 @@ class BundleArm:
     arm_id: str
     bundle_item: str
     bundle_price: float
+    # The SKU this bundle is anchored to (the item already in the cart). Static
+    # catalog bundles leave this None; regimen-graph candidate bundles set it to the
+    # session's target SKU so offers are paired to what the buyer is actually viewing.
+    anchor_sku: str | None = None
 
     def __post_init__(self) -> None:
         _require_arm_id(self.arm_id)
@@ -44,6 +48,10 @@ class BundleArm:
             or float(self.bundle_price) <= 0.0
         ):
             raise ValueError("bundle_price must be a positive number")
+        if self.anchor_sku is not None and (
+            not isinstance(self.anchor_sku, str) or not self.anchor_sku.strip()
+        ):
+            raise ValueError("anchor_sku must be a non-empty string when set")
 
     @property
     def kind(self) -> str:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,8 @@ from razorpay_agent.decision.context import ContextEncoder, DecisionContext
 BANDIT_SOURCE = "linucb_bandit"
 
 STATE_FORMAT_VERSION = 1
+
+_DEFAULT_RNG = random.Random()
 
 
 class LinUCBPolicy:
@@ -49,31 +52,51 @@ class LinUCBPolicy:
             for arm_id in self._order
         }
 
-    def propose(self, context: DecisionContext) -> ProposedAction | None:
-        arm_id, action = self.propose_with_arm(context)
+    def propose(self, context: DecisionContext, allowed_arm_ids=None, temperature=0.0, rng=None) -> ProposedAction | None:
+        arm_id, action = self.propose_with_arm(context, allowed_arm_ids, temperature, rng)
         return action
 
-    def propose_with_arm(self, context: DecisionContext) -> tuple[str | None, ProposedAction | None]:
+    def propose_with_arm(
+        self,
+        context: DecisionContext,
+        allowed_arm_ids: list[str] | None = None,
+        temperature: float = 0.0,
+        rng: random.Random | None = None,
+    ) -> tuple[str | None, ProposedAction | None]:
         features = self._encoder.encode(context)
 
-        best_arm_id: str | None = None
-        best_score = -math.inf
-        best_expected = 0.0
-        best_bonus = 0.0
-        for arm_id in self._order:
-            expected, bonus = self._score(arm_id, features)
-            score = expected + bonus
-            if score > best_score:
-                best_arm_id, best_score = arm_id, score
-                best_expected, best_bonus = expected, bonus
-
-        if best_arm_id is None or best_score <= 0.0:
+        candidate_order = self._order
+        if allowed_arm_ids is not None:
+            allowed = set(allowed_arm_ids)
+            candidate_order = [arm_id for arm_id in self._order if arm_id in allowed]
+        if not candidate_order:
             return None, None
 
-        confidence = abs(best_expected) / (abs(best_expected) + best_bonus)
+        scored = []
+        for arm_id in candidate_order:
+            expected, bonus = self._score(arm_id, features)
+            scored.append((arm_id, expected, bonus, expected + bonus))
+
+        if temperature and temperature > 0.0:
+            rng = rng or _DEFAULT_RNG
+            probabilities = _softmax([s[3] for s in scored], temperature)
+            idx = rng.choices(range(len(scored)), weights=probabilities, k=1)[0]
+            arm_id, expected, bonus, _ = scored[idx]
+        else:
+            best_score = -math.inf
+            best = None
+            for arm_id, expected, bonus, score in scored:
+                if score > best_score:
+                    best_score = score
+                    best = (arm_id, expected, bonus)
+            if best is None or best_score <= 0.0:
+                return None, None
+            arm_id, expected, bonus = best
+
+        confidence = abs(expected) / (abs(expected) + bonus)
         return (
-            best_arm_id,
-            self._to_action(self._arms[best_arm_id], context, best_expected, confidence),
+            arm_id,
+            self._to_action(self._arms[arm_id], context, expected, confidence),
         )
 
     def update(self, arm_id: str, context: DecisionContext, reward: float) -> None:
@@ -155,18 +178,26 @@ class LinUCBPolicy:
     def _arm_record(arm: Arm) -> dict:
         if isinstance(arm, DiscountArm):
             return {"arm_id": arm.arm_id, "kind": "discount", "discount_percent": arm.discount_percent}
-        return {
+        record = {
             "arm_id": arm.arm_id,
             "kind": "bundle",
             "bundle_item": arm.bundle_item,
             "bundle_price": arm.bundle_price,
         }
+        if arm.anchor_sku is not None:
+            record["anchor_sku"] = arm.anchor_sku
+        return record
 
     @staticmethod
     def _arm_from_record(record: dict) -> Arm:
         if record["kind"] == "discount":
             return DiscountArm(record["arm_id"], float(record["discount_percent"]))
-        return BundleArm(record["arm_id"], record["bundle_item"], float(record["bundle_price"]))
+        return BundleArm(
+            record["arm_id"],
+            record["bundle_item"],
+            float(record["bundle_price"]),
+            anchor_sku=record.get("anchor_sku"),
+        )
 
     def _to_action(
         self,
@@ -197,3 +228,22 @@ class LinUCBPolicy:
                 bundle_price=float(arm.bundle_price),
             )
         raise TypeError(f"unsupported arm type {type(arm).__name__}")
+
+
+def _softmax(scores: list[float], temperature: float) -> list[float]:
+    """Scale-independent softmax over raw scores.
+
+    Scores are z-normalized by their own standard deviation so ``temperature`` is
+    expressed in units of sigma rather than in the (arbitrary, often large) raw
+    score magnitude. This keeps selection behavior stable across contexts.
+    """
+    if not scores:
+        return []
+    shifted = [s - max(scores) for s in scores]
+    mean = sum(shifted) / len(shifted)
+    var = sum((x - mean) ** 2 for x in shifted) / len(shifted)
+    std = math.sqrt(var) if var > 0.0 else 1.0
+    z = [s / std for s in shifted]
+    exps = [math.exp(zi / temperature) for zi in z]
+    total = sum(exps)
+    return [e / total for e in exps]
