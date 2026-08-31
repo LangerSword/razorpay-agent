@@ -1,7 +1,12 @@
 # razorpay-agent
 
 A merchant-side agent that proposes offers to an AI buyer over ACP and settles
-them on Razorpay — every action bounded, gated, and audited. **No LLM.**
+them on Razorpay — every action bounded, gated, and audited. An advisory LLM
+reasoner lives in `reasoning/` and is structurally barred from the money path.
+
+> **Demo merchant:** *Plain Goods Co.* is a **fictional** merchant used only for
+> this buildathon demo. It is not affiliated with, endorsed by, or representative
+> of any real company. The product catalog and regimen graph are invented too.
 
 ## Safe by construction
 
@@ -29,13 +34,20 @@ runs through Razorpay test mode.
 - **Rigor** — the gate is property-fuzzed: 20,000 generated decisions, 0 violations.
 - **Honest eval** — off-policy counterfactual reports a 95% CI and a disclosed
   kernel, and says so when the result is a null.
+- **Live reasoning (P4)** — advisory LLM reasoner live on Nous Portal (Step 3.7
+  Free); tool specs include arg schemas so the model calls tools correctly in one
+  shot; final answers are post-processed clean.
+- **Regimen-aware (P3)** — `BundleArm.anchor_sku` + candidate-generator node in the
+  MerchantAgent graph; simulator honors the co-purchase prior via
+  `CoPurchaseGraph.relevant_categories`.
 
 ## Run it
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,llm]"
 pytest -q
 python demo/run_full_demo.py --wait 900   # accept · gate-cap · failure · live settlement
+python demo/run_reasoning_demo.py         # live Nous reasoning trace
 ```
 
 Live settlement needs `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in `.env`;
@@ -44,7 +56,10 @@ without them the server falls back loudly to the scripted provider.
 ## Layout
 
 ```
-src/razorpay_agent/{core,gate,decision,checkout,buyer,audit,eval,watchdog}
+src/razorpay_agent/{core,gate,decision,checkout,buyer,audit,eval,watchdog,graph,reasoning,storefront}
 ```
+
+A thin presentational storefront is served at `GET /storefront` (a visual layer over
+the existing `/products` ACP feed, with an agent-vs-human browsing indicator).
 
 `architecture.md` explains *why*; `prompt.md` governs *how* you change it.

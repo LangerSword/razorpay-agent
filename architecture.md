@@ -4,6 +4,7 @@
 **Context:** Razorpay AI Builders' Buildathon (fellowship track)
 **Deadline:** ~September 5, 2026
 **Built by:** solo developer
+**Demo merchant:** *Plain Goods Co.* is a **fictional** merchant invented for this buildathon. The catalog, regimen graph, and storefront are all invented; no real brand is depicted or implied.
 
 This document is the single source of truth for the architecture of razorpay-agent. It exists so that both a human and an LLM coding agent can pick it up cold and understand not just *what* to build, but *why* every structural decision was made — so that future changes stay consistent with the reasoning instead of drifting from it.
 
@@ -19,7 +20,7 @@ razorpay-agent does both (a) and (b) in one coherent system: a merchant-side dec
 
 These three principles were decided explicitly and constrain every downstream choice in this document. Any future change must be checked against them.
 
-1. **Zero LLM anywhere in the system.** Not in the decision layer, not in the checkout surface, not in the eval harness. The "AI" in this project is the eval harness, the bandit, and the multi-agent orchestration — not a language model. This is a deliberate response to the buildathon's own framing, which explicitly asked for heavy AI work (eval/harness/agents) rather than an LLM wrapper.
+1. **The LLM is an advisory reasoner, structurally barred from the money path.** We use an LLM in `reasoning/` to explain *why* the decision layer proposed an offer. It can never go against the rules, because the architecture does not let it: the reasoner sees context only through **read-only** tools, can only append a reasoning trace (a side table — never the core audit trail's decision fields), and never proposes or executes a settlement. Every money action still flows through the rule & policy gate (principle 2: the rule layer always wins), the immutable core contract, and the audit trail. If the model is missing, misconfigured, or fails, it degrades to a keyless `StubBackend` with zero effect on any decision. The revenue-driving "AI" (the bandit) and the eval harness remain deliberately non-LLM; the reasoning layer is the one explicitly LLM-backed part. The hard constraints are what make an LLM safe here — its output is explanation, not authority.
 2. **Minimal dependency on any single model.** The system must remain safe and functional even if its learned model (the bandit) were replaced, disabled, or wrong. This is achieved structurally, not by trusting the model to behave — see the Core Contract below.
 3. **A small, stable core with pluggable edges.** The core is deliberately tiny (three data shapes and one rule). Everything else is a replaceable module that speaks to that core. This is what allows components to be added, removed, or swapped later without destabilizing the rest of the system.
 
@@ -96,12 +97,12 @@ The only component in the system allowed to be a learned model, and even then, i
 
 - **Algorithm:** LinUCB (a contextual bandit). Chosen over epsilon-greedy for smarter, confidence-weighted exploration — it converges faster, which matters because the live demo will only produce a handful of real transactions to learn from.
 - **Context (what it sees):** cart contents, item category, cart value, and the buyer-agent's stated spending allowance. Deliberately kept small and legible — more context means harder-to-explain individual decisions.
-- **Action space — discrete arms:** the bandit chooses among a small fixed menu of candidate offers: a handful of configured discount percentages plus cataloged bundle items with fixed prices. Continuous-percentage scoring was considered and rejected: regret accounting for the eval harness is only clean over finite arms, every proposal stays directly explainable ("the 10% arm"), and a fixed menu makes policy leakage structurally hard — the bandit selects among candidates rather than optimizing a value it might be tempted to clamp. Arms deliberately span offers the gate may cap down or reject; the bandit never adjusts a proposal to fit policy, it just learns from what happens to each arm.
+- **Action space — discrete arms:** the bandit chooses among a small fixed menu of candidate offers: a handful of configured discount percentages plus cataloged bundle items with fixed prices. Continuous-percentage scoring was considered and rejected: regret accounting for the eval harness is only clean over finite arms, every proposal stays directly explainable ("the 10% arm"), and a fixed menu makes policy leakage structurally hard — the bandit selects among candidates rather than optimizing a value it might be tempted to clamp. Arms deliberately span offers the gate may cap down or reject; the bandit never adjusts a proposal to fit policy, it just learns from what happens to each arm. Bundle arms optionally carry an `anchor_sku` naming the cart item they are paired to (regimen-anchored bundles set it; static catalog bundles leave it unset) — see §4.9.
 - **Abstention:** if even the most optimistic arm score (expected reward plus exploration bonus) is non-positive, the bandit proposes nothing for that session — low-confidence silence is a valid decision-layer output, per §5 step 2.
 - **Context encoding:** the legible context maps to a small numeric vector — intercept, cart value scaled to thousands of rupees, allowance-to-cart ratio, one-hot item category. The SKU itself is deliberately not a feature; the category carries that signal.
 - **Pretraining and persistence:** the policy's full learned state — per-arm `A` matrices and `b` vectors, alpha, arm definitions, encoder categories, update count — serializes to plain JSON at `demo/pretrained_bandit.json`. A one-time pretraining script (`demo/pretrain_bandit.py`) runs the bandit through 5,000 synthetic episodes via the eval harness's simulator, with every proposal passing through the real gate exactly as in production. `run_server.py` warm-starts from this file whenever it exists and keeps learning from live transactions thereafter (the hybrid strategy of §4.5); if the file is missing it starts cold with a loud log line — the same no-silent-fallback principle as the payment credentials.
 - **Observed converged behavior:** after pretraining, the policy reliably prefers its best net-revenue arm (a modest discount), with near-total confidence — meaning an over-cap proposal becomes an exploration artifact rather than steady-state behavior, and the rule layer's caps bind mainly on high-value carts where even the preferred percentage exceeds the rupee ceiling. This is the intended division of labor showing up empirically: training reduces reliance on the gate; it never replaces it.
-- **Reward signal:** **net revenue gained**, not raw accept/decline — the value gained from an accepted offer minus the discount cost. A policy that accepts everything by discounting to the max would score poorly here even with a high acceptance rate.
+- **Reward signal:** **net revenue gained**, not raw accept/decline — the value gained from an accepted offer minus the discount cost. A policy that accepts everything by discounting to the max would score poorly here even with a high acceptance rate. This is the §4.7 definition **for normal inventory**; the stagnant clearance objective in §4.8 is a deliberate, narrower extension of it for dead stock only.
 - **Classified as RL, but the simplest slice of it:** a contextual bandit is single-step reinforcement learning — one decision, one immediate reward, no modeling of how this action affects future states. This keeps it lightweight, interpretable, and appropriate for the "minimal model dependency" principle, as opposed to full multi-step RL.
 - **Swappability:** because this component only ever emits a `ProposedAction`, it can be replaced by any other decision-making approach (a different bandit, a rules engine, anything) without touching the rule layer, the audit trail, or the checkout surface.
 
@@ -165,6 +166,31 @@ System-level extension of "bounded and gated": the gate bounds each transaction;
 - **Recovery is manual only:** an operator call (or `POST /watchdog/promote` with a required note) re-enables the bandit and clears the rolling windows. No auto-recovery — flapping risk isn't worth it.
 - **Deterministic seeding for demos:** `RAZORPAY_AGENT_SABOTAGE_BANDIT=1` wraps the live policy in a `SabotagedPolicy` that always proposes a deliberately gate-rejected arm, driving compliance to zero on schedule. The watchdog then catches a real failure through the real pipeline on command — never by chance. `demo/run_watchdog_demo.py` walks the full arc (healthy → sabotage → auto-demotion → rule-only → manual re-promotion) in one self-contained run.
 
+### 4.8 Stagnant Clearance Objective (extension of §4.7, dead stock only)
+
+A stagnant unit is dead stock: an unsold unit is a *continuing* cost, so the decision objective for it is to **clear the unit, not to maximize per-unit margin**. This reframes the reward for stagnant sessions only — normal inventory keeps the §4.7 net-revenue reward unchanged.
+
+- **Completed clearance (a real proposal the buyer accepts):** realizes the avoided carrying cost of the unit — `clearance_relief_rupees(cart, days_in_stock)` — and **drops the per-unit margin term**. The margin forgone on a discount is irrelevant once the goal is "get it out of the warehouse"; what matters is that the unit left, stopping the bleed.
+- **Non-clearance (a real proposal the buyer declines or that otherwise does not complete):** realizes a **negative** reward equal to exactly **one period (one day) of carrying cost** — `carrying_cost_penalty_rupees(cart) = DAILY_HOLDING_COST_RATE * cart`.
+- **Single documented rate:** both terms share the one `ANNUAL_HOLDING_COST_RATE = 0.25` assumption already used for the original clearance relief (retail carrying cost commonly cited at ~20–30%/yr). No second number was introduced, and **neither was tuned to a target** — the same "documented assumption, not tuned to look good" standard as the original discount caps and HOLDING_COST.
+- **Why deeper discounts win, honestly:** for a given item the relief is constant across arms, so the expected stagnant reward is `p_clear * relief − (1 − p_clear) * penalty`. Completion probability `p_clear` therefore dominates, and deeper discounts (higher completion) strictly out-score shallower ones — without inflating the carrying cost to the ~260%/yr a margin-retention reading would have required (which would have been exactly the forbidden "tuned to look good" move).
+- **Observed outcomes only:** the penalty applies *solely* to a real proposal that resulted in a decline/no-sale on a stagnant item — an event the system actually observed. It is **never** applied to a hypothetical no-traffic scenario the system has no visibility into. The live resolve paths (`checkout/offers.py`) and the simulator (`eval/synthetic.py`) share this single definition, so the bandit update, audit metric, and watchdog all agree.
+
+### 4.9 Regimen / Co-purchase Graph (P3)
+
+The merchant's regimen (co-purchase) relationships are a **documented prior** — `decision/co_purchase_graph.py` — not inferred by the bandit. Edge weight = regimen strength; node degree = a popularity proxy. It is the MerchantAgent graph state and the single source of truth the candidate-generator node and the simulator both read from.
+
+- **Candidate-generator node:** `candidate_bundles_for(target_sku, catalog, graph)` returns `BundleArm`s whose `anchor_sku` is the target SKU and whose `bundle_item` is a regimen neighbor, priced from the catalog. The bandit may choose among these instead of the static catalog bundles, so offers pair to what the buyer is actually viewing. In the `MerchantAgentGraph` this is a real graph node (`generate_candidates`) that runs every proposal and populates `candidate_arms` into the decision state (live selection among these arms is a follow-up).
+- **Simulator honors the prior:** `eval/replay.py` derives bundle relevance from `CoPurchaseGraph.relevant_categories(category)` instead of naive category equality. The reward formula shape is unchanged — it reuses `BUNDLE_RELEVANT/IRRELEVANT_TAKE_RATE`, only the *source* of the relevance flag moves to this graph.
+
+### 4.10 Advisory Reasoning (LLM, isolated — see §2 principle 1)
+
+A Hermes-style reasoner that explains *why* the decision layer proposed an offer. It is strictly advisory and isolated: it reads context through registered **read-only** tools and writes a `reasoning_log` trace (a side table, separate from the core audit trail). It never proposes or executes a settlement; money execution stays in the bandit + gate path.
+
+- **Backends (pluggable):** `stub` (keyless, scripted — the default so the demo runs with no keys), `openai`, `anthropic`, and as of P4 `tencent` (Tencent HY3) and `nous` (Nous Portal), both OpenAI-compatible and reading `<PREFIX>_API_KEY` / `<PREFIX>_BASE_URL` from the environment.
+- **Selection:** `resolve_provider` precedence is explicit name → config → `RAZORPAY_AGENT_LLM_PROVIDER` env → `stub`. Any construction failure degrades to `stub`, so the reasoner can never block or alter the decision layer.
+- **Key hygiene:** a scoped `.env` loader exports only reasoning-related keys into `os.environ` (Razorpay credentials are intentionally left to the server's own loader), so no secret leakage and no cross-contamination with the money path.
+
 ---
 
 ## 5. End-to-End Flow
@@ -208,7 +234,7 @@ This is what "modular, easy to add/remove" means concretely in this system:
 
 ## 9. Explicitly Out of Scope
 
-- No LLM anywhere in the decision-making or money-action path.
+- LLM is out of scope for the decision-making and money-action path. It lives only in the advisory reasoning module (§4.10), where it cannot affect settlements; the bandit and the eval harness remain deliberately non-LLM.
 - No full NPCI UAP implementation (no public spec exists).
 - No full AP2 cryptographic mandate stack (concept borrowed via ACP's delegated payment allowance instead).
 - No x402 / crypto settlement.
@@ -244,4 +270,4 @@ Repository layout mirrors the component list one-to-one: `src/razorpay_agent/{co
 
 Payment credentials come exclusively from a gitignored `.env` file at the repo root or from shell environment variables (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`) — never from code, repo files, or chat. When credentials are absent the server falls back loudly to the scripted payment provider rather than failing silently, so a demo can never be mistaken for live settlement.
 
-No LLM dependency appears anywhere in this stack — by design (§2).
+No LLM dependency appears in the *core* decision/eval stack — by design (§2). The optional `llm` extra pulls in `openai` for the advisory reasoning module only (§4.10); it is never required for the system to run.

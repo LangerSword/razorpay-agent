@@ -10,7 +10,7 @@ You are building **razorpay-agent**. Before writing, modifying, or reviewing any
 
 ## Non-negotiable constraints (do not relax these under any framing)
 
-- **No LLM anywhere in the decision-making or money-action path.** Not for scoring, not for parsing, not for "just this one small step." If a task seems to need an LLM to be convenient, that's a signal to reconsider the approach, not to add one.
+- **The LLM is allowed only as an advisory reasoner, never on the money path.** Reasoning/explanation in `reasoning/` may use an LLM, but it is structurally prevented from affecting money actions: read-only tools only, it can only write a reasoning trace, and it never proposes or executes a settlement. The decision layer (bandit) and the eval harness stay non-LLM by design. If a task needs an LLM to *score, parse, or decide* a money action, that's a signal to reconsider the approach. The hard constraints — the rule layer always wins, the immutable core contract, the audit trail — guarantee the LLM cannot violate the rules regardless of its output.
 - **Nothing acts unless it has passed through the gate.** Any code path that would let a `ProposedAction` become a real action without going through the rule & policy layer's `GateDecision` is a bug, regardless of how it got there.
 - **Nothing that happens goes unrecorded.** Every proposal — approved, rejected, accepted, declined, or failed — gets an `AuditEntry`. No silent paths.
 - **The rule & policy layer always wins over the decision layer.** If the two disagree, the rule layer's `final_action` is what executes, full stop.
@@ -23,4 +23,4 @@ You are building **razorpay-agent**. Before writing, modifying, or reviewing any
 
 ## Tone for this project
 
-Zero LLM in the shipped system does not mean zero rigor in how you build it. Favor explicit, legible, boring code over clever code — the whole point of this architecture is that a judge (or the user) can look at any single decision the system made and understand exactly why, without having to trust a black box. Code that's hard to explain in one sentence is a signal to simplify, not a signal to add a comment.
+A lean, auditable core does not mean zero rigor in how you build it. Favor explicit, legible, boring code over clever code — the whole point of this architecture is that a judge (or the user) can look at any single decision the system made and understand exactly why, without having to trust a black box. The LLM, where used, is confined to advisory reasoning and structurally cannot reach the money path. Code that's hard to explain in one sentence is a signal to simplify, not a signal to add a comment.
