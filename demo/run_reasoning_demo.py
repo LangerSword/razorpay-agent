@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sys
+from pathlib import Path
 
 sys.path.insert(0, "src")
 
@@ -21,7 +23,16 @@ deps = ReasoningDeps(
     GATE,
     CoPurchaseGraph.from_catalog(DEMO_CATALOG),
 )
-agent = ReasoningAgent(llm=resolve_provider(), deps=deps, store=ReasoningStore(":memory:"))
+examples_path = Path("demo/reasoning_examples.json")
+examples = None
+if examples_path.exists():
+    try:
+        examples = json.loads(examples_path.read_text()).get("examples", [])
+    except Exception:
+        examples = None
+agent = ReasoningAgent(
+    llm=resolve_provider(), deps=deps, store=ReasoningStore(":memory:"), examples=examples
+)
 
 
 def show(title: str, **kw) -> None:

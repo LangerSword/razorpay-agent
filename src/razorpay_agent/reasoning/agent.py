@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from razorpay_agent.reasoning.llm import LLMBackend, resolve_provider
 from razorpay_agent.reasoning.tools import ReasoningDeps, build_registry
@@ -51,6 +51,22 @@ You may call at most one tool per turn. After gathering what you need, give a fi
 recommendation as plain text. Do NOT propose settlement or payment. Keep it concise."""
 
 
+def _format_examples(examples: list[dict[str, Any]]) -> str:
+    parts: list[str] = ["Few-shot examples of good reasoning traces:"]
+    for idx, ex in enumerate(examples, 1):
+        parts.append(f"\n--- Example {idx}: {ex.get('scenario', idx)} ---")
+        for turn in ex.get("turns", []):
+            role = turn.get("role", "assistant")
+            content = turn.get("content", "")
+            if role == "assistant":
+                parts.append(f"ASSISTANT: {content}")
+            else:
+                parts.append(f"USER: {content}")
+        if ex.get("final_text"):
+            parts.append(f"FINAL ANSWER: {ex['final_text']}")
+    return "\n".join(parts)
+
+
 class ReasoningAgent:
     """Hermes-style loop: prompt -> LLM -> tool_calls -> loop -> persist.
 
@@ -66,6 +82,7 @@ class ReasoningAgent:
         max_steps: int = DEFAULT_MAX_STEPS,
         store=None,
         callbacks: list[Callable[[ReasoningStep], None]] | None = None,
+        examples: list[dict[str, Any]] | None = None,
     ) -> None:
         self._llm = llm or resolve_provider()
         self._deps = deps or ReasoningDeps(
@@ -75,6 +92,7 @@ class ReasoningAgent:
         self._max_steps = max_steps
         self._store = store
         self._callbacks = callbacks or []
+        self._examples = examples or []
 
     def _emit(
         self,
@@ -111,9 +129,10 @@ class ReasoningAgent:
         bandit_action: dict | None = None,
         gate_decision: dict | None = None,
     ) -> ReasoningResult:
-        system = SYSTEM_TEMPLATE.format(
-            tool_specs=json.dumps(self._registry.specs(), indent=2)
-        )
+        tool_specs = json.dumps(self._registry.specs(), indent=2)
+        system = SYSTEM_TEMPLATE.format(tool_specs=tool_specs)
+        if self._examples:
+            system = _format_examples(self._examples) + "\n\n" + system
         user = self._user_prompt(
             session_id, target_sku, item_category, cart_value_inr,
             buyer_allowance_inr, is_stagnant, days_in_stock,
