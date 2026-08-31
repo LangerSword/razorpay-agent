@@ -14,10 +14,12 @@ dependencies = [
     "razorpay>=1.4",
     "matplotlib>=3.8",
     "httpx2>=2.12",
+    "langgraph>=1.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6"]
+llm = ["openai>=1.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
