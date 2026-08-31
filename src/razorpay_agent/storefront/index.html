@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Plain Goods Co. — Storefront</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    :root { --bg:#0f1115; --card:#171a21; --ink:#e8eaed; --muted:#9aa0aa; --accent:#5b8cff; --agent:#ffb02e; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           background:var(--bg); color:var(--ink); }
+    header { display:flex; align-items:center; justify-content:space-between; padding:20px 28px;
+             border-bottom:1px solid #23262e; }
+    .brand { font-size:20px; font-weight:700; letter-spacing:.2px; }
+    .tagline { color:var(--muted); font-size:13px; margin-top:2px; }
+    .badge { font-size:13px; font-weight:600; padding:6px 12px; border-radius:999px; }
+    .badge.human { background:#1c2a1c; color:#7ee07e; border:1px solid #2f4a2f; }
+    .badge.agent { background:#33270a; color:var(--agent); border:1px solid #5a4410; }
+    main { padding:28px; display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:18px; }
+    .card { background:var(--card); border:1px solid #23262e; border-radius:14px; padding:18px; }
+    .card h3 { margin:0 0 6px; font-size:16px; }
+    .cat { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+    .price { margin-top:12px; font-size:18px; font-weight:700; }
+    .note { color:var(--muted); font-size:12px; padding:0 28px 24px; max-width:680px; }
+    .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px;
+             background:var(--agent); animation:p 1.2s infinite; }
+    @keyframes p { 0%,100%{opacity:.3} 50%{opacity:1} }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const AGENT_WINDOW = 30; // seconds
+
+    function fmtPaise(p) {
+      return "₹" + (p / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 });
+    }
+
+    function ProductCard({ item }) {
+      return (
+        <div className="card">
+          <div className="cat">{item.category}</div>
+          <h3>{item.title}</h3>
+          <div className="price">{fmtPaise(item.unit_amount)}</div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [items, setItems] = React.useState([]);
+      const [meta, setMeta] = React.useState({ merchant_name: "Plain Goods Co.", agent_active: false });
+      const forced = new URLSearchParams(window.location.search).get("mode") === "agent";
+
+      React.useEffect(() => {
+        let alive = true;
+        async function tick() {
+          try {
+            const [p, s] = await Promise.all([
+              fetch("/products").then(r => r.json()),
+              fetch("/storefront/status" + (forced ? "?mode=agent" : "")).then(r => r.json()),
+            ]);
+            if (alive) { setItems(p.items); setMeta(s); }
+          } catch (e) { /* keep last good state */ }
+        }
+        tick();
+        const id = setInterval(tick, 3000);
+        return () => { alive = false; clearInterval(id); };
+      }, [forced]);
+
+      const agent = forced || meta.agent_active;
+      return (
+        <React.Fragment>
+          <header>
+            <div>
+              <div className="brand">{meta.merchant_name}</div>
+              <div className="tagline">razorpay-agent demo storefront · fed by the ACP /products feed</div>
+            </div>
+            {agent
+              ? <div className="badge agent"><span className="pulse"></span>Agent browsing</div>
+              : <div className="badge human">Human browsing</div>}
+          </header>
+          <main>
+            {items.map(it => <ProductCard key={it.id} item={it} />)}
+            {items.length === 0 && <div className="note">Loading product feed…</div>}
+          </main>
+          <div className="note">
+            This is a thin visual layer over the merchant's existing agent-to-agent commerce
+            (ACP) product feed. The badge flips to “Agent browsing” whenever an AI buyer-agent
+            is actively driving a checkout session.
+          </div>
+        </React.Fragment>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

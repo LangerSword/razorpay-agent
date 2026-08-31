@@ -23,6 +23,8 @@ class RulePolicyGateConfig:
     max_discount_percent: float = 15.0
     max_discount_rupee_cap: float = 300.0
     max_bundle_cart_share: float = 0.20
+    clearance_max_discount_percent: float = 40.0
+    clearance_max_discount_rupee_cap: float = 1_000_000.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.fallback_bundle_item, str) or not self.fallback_bundle_item.strip():
@@ -32,6 +34,8 @@ class RulePolicyGateConfig:
             "max_discount_percent",
             "max_discount_rupee_cap",
             "max_bundle_cart_share",
+            "clearance_max_discount_percent",
+            "clearance_max_discount_rupee_cap",
         ):
             value = getattr(self, field)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -72,17 +76,27 @@ class RulePolicyGate:
     ) -> GateDecision:
         proposed_percent = float(action.discount_percent)
 
+        is_clearance = bool(context.is_stagnant)
+        max_percent = (
+            self._config.clearance_max_discount_percent
+            if is_clearance
+            else self._config.max_discount_percent
+        )
+        max_rupee_cap = (
+            self._config.clearance_max_discount_rupee_cap
+            if is_clearance
+            else self._config.max_discount_rupee_cap
+        )
+
         checked.append(MAX_DISCOUNT_PCT)
-        effective_percent = min(proposed_percent, self._config.max_discount_percent)
+        effective_percent = min(proposed_percent, max_percent)
         capped_by_percent = effective_percent < proposed_percent
 
         checked.append(MAX_DISCOUNT_RUPEE_CAP)
         rupee_amount = context.cart_value_inr * effective_percent / 100.0
         capped_by_rupee = False
-        if rupee_amount > self._config.max_discount_rupee_cap:
-            implied_percent = (
-                100.0 * self._config.max_discount_rupee_cap / context.cart_value_inr
-            )
+        if rupee_amount > max_rupee_cap:
+            implied_percent = 100.0 * max_rupee_cap / context.cart_value_inr
             effective_percent = math.floor(implied_percent * 100.0) / 100.0
             capped_by_rupee = True
 
@@ -107,7 +121,12 @@ class RulePolicyGate:
                 f"{context.buyer_allowance_inr:.2f}",
             )
 
-        if capped_by_rupee:
+        if is_clearance:
+            reason = (
+                f"clearance discount {effective_percent:g}% (stagnant inventory) "
+                f"within clearance limits"
+            )
+        elif capped_by_rupee:
             reason = (
                 f"rupee discount capped at {self._config.max_discount_rupee_cap:.2f} "
                 f"({effective_percent:g}% of cart)"

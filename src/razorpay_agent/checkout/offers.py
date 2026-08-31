@@ -17,9 +17,15 @@ from razorpay_agent.core.audit import (
     AuditEntry,
     AuditOutcome,
 )
+from razorpay_agent.core.decisions import GateDecision
 from razorpay_agent.decision.context import DecisionContext
 from razorpay_agent.decision.linucb import LinUCBPolicy
-from razorpay_agent.eval.synthetic import AVG_BASE_COMPLETION_PROB
+from razorpay_agent.eval.synthetic import (
+    AVG_BASE_COMPLETION_PROB,
+    carrying_cost_penalty_rupees,
+    clearance_relief_rupees,
+    is_deep_discount_arm,
+)
 from razorpay_agent.gate.context import SessionContext
 from razorpay_agent.gate.gate import RulePolicyGate, RulePolicyGateConfig
 
@@ -28,6 +34,8 @@ FALLBACK_SOURCE = "fallback_rule"
 EXPECTED_NO_OFFER_FRACTION = AVG_BASE_COMPLETION_PROB
 
 
+# For stale-stock clearance, only meaningful (deep) discounts are worth
+# offering (see CLEARANCE_MIN_DISCOUNT_PCT in razorpay_agent.eval.synthetic).
 class OfferPipeline:
     def __init__(
         self,
@@ -36,6 +44,8 @@ class OfferPipeline:
         audit_store: AuditStore,
         watchdog=None,
         decision_log=None,
+        temperature: float = 0.0,
+        rng=None,
     ) -> None:
         self._policy = policy
         self._gate = RulePolicyGate(gate_config)
@@ -43,6 +53,19 @@ class OfferPipeline:
         self._audit = audit_store
         self._watchdog = watchdog
         self._decision_log = decision_log
+        self._temperature = temperature
+        self._rng = rng
+        self._graph = None
+
+    def attach_graph(self) -> None:
+        """Wrap the decision flow in a LangGraph StateGraph (see graph/merchant_graph).
+
+        Once attached, ``propose_for_session`` routes through the graph. The graph
+        nodes call the same underlying ``_step_*`` methods, so the two paths are
+        behaviourally identical (see tests/test_merchant_graph.py)."""
+        from razorpay_agent.graph.merchant_graph import MerchantAgentGraph
+
+        self._graph = MerchantAgentGraph(self)
 
     def propose_for_session(
         self,
@@ -53,34 +76,98 @@ class OfferPipeline:
     ) -> AppliedOffer | None:
         if state.applied_offer is not None:
             return state.applied_offer
+        if self._graph is not None:
+            return self._graph.propose_for_session(state, cart_value_paise, target_sku, category)
 
-        decision_context = DecisionContext(
+        decision_context = self._step_context(state, cart_value_paise, target_sku, category)
+        arm_id, action, bandit_consulted = self._step_consult(
+            state, decision_context, cart_value_paise
+        )
+        decision = self._step_gate(state, action, cart_value_paise)
+        return self._step_finalize(
+            state, action, decision_context, decision, arm_id, bandit_consulted,
+            cart_value_paise, target_sku, category,
+        )
+
+    def _step_context(
+        self,
+        state: CheckoutSessionState,
+        cart_value_paise: int,
+        target_sku: str,
+        category: str,
+    ) -> DecisionContext:
+        return DecisionContext(
             session_id=state.id,
             target_sku=target_sku,
             item_category=category,
             cart_value_inr=to_rupees(cart_value_paise, state.currency),
             buyer_allowance_inr=to_rupees(state.allowance_max_paise, state.currency),
+            is_stagnant=state.is_stagnant,
+            days_in_stock=state.days_in_stock,
         )
 
+    def _step_consult(
+        self,
+        state: CheckoutSessionState,
+        decision_context: DecisionContext,
+        cart_value_paise: int,
+    ) -> tuple[str | None, ProposedAction | None, bool]:
         bandit_consulted = self._policy is not None and not (
             self._watchdog is not None and self._watchdog.demoted
         )
         arm_id: str | None = None
         action: ProposedAction | None = None
         if bandit_consulted:
-            arm_id, action = self._policy.propose_with_arm(decision_context)
+            # Both a deep discount and a bundle upsell are valid ways to clear
+            # stale stock. Token discounts (5-15%) do not move dead inventory, so
+            # for stagnant sessions the discount arms are restricted to the deeper
+            # ones while the bundle remains available. Selection uses softmax
+            # sampling (temperature > 0) when configured, else greedy argmax.
+            allowed = None
+            if state.is_stagnant:
+                allowed = [
+                    aid
+                    for aid in self._policy.arm_ids
+                    if aid.startswith("b") or is_deep_discount_arm(aid)
+                ]
+            arm_id, action = self._policy.propose_with_arm(
+                decision_context,
+                allowed_arm_ids=allowed,
+                temperature=self._temperature,
+                rng=self._rng,
+            )
         if action is None:
             action = self._fallback_action(state.id, to_rupees(cart_value_paise, state.currency))
             arm_id = None
+        return arm_id, action, bandit_consulted
 
+    def _step_gate(
+        self,
+        state: CheckoutSessionState,
+        action: ProposedAction,
+        cart_value_paise: int,
+    ) -> "GateDecision":
         gate_context = SessionContext(
             session_id=state.id,
             cart_value_inr=to_rupees(cart_value_paise, state.currency),
             buyer_allowance_inr=to_rupees(state.allowance_max_paise, state.currency),
             already_offered=False,
+            is_stagnant=state.is_stagnant,
         )
-        decision = self._gate.evaluate(action, gate_context)
+        return self._gate.evaluate(action, gate_context)
 
+    def _step_finalize(
+        self,
+        state: CheckoutSessionState,
+        action: ProposedAction,
+        decision_context: DecisionContext,
+        decision: "GateDecision",
+        arm_id: str | None,
+        bandit_consulted: bool,
+        cart_value_paise: int,
+        target_sku: str,
+        category: str,
+    ) -> AppliedOffer:
         audit_entry_id = None
         if decision.allowed:
             audit_entry_id = self._audit.append(
@@ -152,9 +239,18 @@ class OfferPipeline:
         offer = state.applied_offer
         if offer is None or offer.gate_decision.allowed is False:
             return
-        net_revenue_rupees = (
-            paid_total_paise - EXPECTED_NO_OFFER_FRACTION * base_total_paise
-        ) / state.currency.minor_unit_divisor
+        if state.is_stagnant:
+            # Stagnant clearance objective (architecture.md §4.7/§4.8): clearing
+            # the dead-stock unit earns the avoided carrying cost (relief); the
+            # revenue the sale itself earns is credited separately above. A bundle
+            # attachment and a discount sale are both valid ways to clear it.
+            net_revenue_rupees = clearance_relief_rupees(
+                base_total_paise / state.currency.minor_unit_divisor, state.days_in_stock
+            )
+        else:
+            net_revenue_rupees = (
+                paid_total_paise - EXPECTED_NO_OFFER_FRACTION * base_total_paise
+            ) / state.currency.minor_unit_divisor
         self._append_resolution(
             state,
             ACCEPTED,
@@ -168,14 +264,23 @@ class OfferPipeline:
         if offer is None or offer.gate_decision.allowed is False:
             return
         self._append_resolution(state, DECLINED, why)
-        self._forward_reward(offer, 0.0)
+        reward = 0.0
+        if state.is_stagnant:
+            # A real stagnant proposal that did not clear incurs one period of
+            # carrying cost. Guarded by _forward_reward's bandit-only check, so it
+            # applies solely to observed outcomes, never hypothetical no-traffic.
+            reward = -carrying_cost_penalty_rupees(offer.decision_context.cart_value_inr)
+        self._forward_reward(offer, reward)
 
     def resolve_failed(self, state: CheckoutSessionState, why: str) -> None:
         offer = state.applied_offer
         if offer is None or offer.gate_decision.allowed is False:
             return
         self._append_resolution(state, FAILED, why)
-        self._forward_reward(offer, 0.0)
+        reward = 0.0
+        if state.is_stagnant:
+            reward = -carrying_cost_penalty_rupees(offer.decision_context.cart_value_inr)
+        self._forward_reward(offer, reward)
 
     def _forward_reward(self, offer: AppliedOffer, reward: float) -> None:
         if not offer.bandit_proposed and offer.arm_id is None:

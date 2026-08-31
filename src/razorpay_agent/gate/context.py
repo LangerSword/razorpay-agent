@@ -23,6 +23,7 @@ class SessionContext:
     cart_value_inr: float
     buyer_allowance_inr: float
     already_offered: bool = False
+    is_stagnant: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.session_id, str) or not self.session_id.strip():
@@ -37,3 +38,5 @@ class SessionContext:
         )
         if not isinstance(self.already_offered, bool):
             raise InvalidContext("already_offered must be a boolean")
+        if not isinstance(self.is_stagnant, bool):
+            raise InvalidContext("is_stagnant must be a boolean")

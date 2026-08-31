@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
+import random
 import sys
 from pathlib import Path
 
 from razorpay_agent.audit import AuditStore
 from razorpay_agent.checkout.api import build_app
 from razorpay_agent.checkout.catalog import DEMO_CATALOG
+from razorpay_agent.checkout.inventory import InventoryStore
 from razorpay_agent.checkout.offers import OfferPipeline
 from razorpay_agent.checkout.payments import (
     PaymentProvider,
@@ -31,7 +33,7 @@ SABOTAGE_ENV_VAR = "RAZORPAY_AGENT_SABOTAGE_BANDIT"
 DEFAULT_BASELINE_NET_REVENUE = 50.0
 DEFAULT_BASELINE_COMPLIANCE = 0.85
 
-LIVE_DISCOUNT_ARMS = (5.0, 10.0, 15.0, 20.0)
+LIVE_DISCOUNT_ARMS = (5.0, 10.0, 15.0, 20.0, 25.0, 35.0, 40.0)
 LIVE_BUNDLE_ITEMS: dict[str, tuple[str, float]] = {
     "sku-socks": ("apparel", 499.0),
     "sku-charger": ("electronics", 1499.0),
@@ -197,6 +199,8 @@ def maybe_sabotage(policy):
 def build_live_app(
     db_path: str | Path = DEFAULT_DB_PATH,
     pretrained_bandit_path: str | Path | None = PRETRAINED_BANDIT_PATH,
+    temperature: float = 0.0,
+    rng: random.Random | None = None,
 ):
     provider, is_live = build_payment_provider()
 
@@ -218,7 +222,14 @@ def build_live_app(
         audit_store,
         watchdog=watchdog,
         decision_log=eval_store,
+        temperature=temperature,
+        rng=rng,
     )
+    # Route the MerchantAgent decision flow through the LangGraph StateGraph
+    # (thin wrapper; behaviour identical to the direct pipeline path).
+    pipeline.attach_graph()
+
+    inventory = InventoryStore.from_catalog(DEMO_CATALOG)
 
     app = build_app(
         DEMO_CATALOG,
@@ -227,6 +238,7 @@ def build_live_app(
         provider,
         eval_store=eval_store,
         watchdog=watchdog,
+        inventory=inventory,
     )
     app.state.bandit_warm = is_warm
     app.state.watchdog = watchdog

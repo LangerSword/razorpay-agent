@@ -42,6 +42,8 @@ class CheckoutSessionState:
     applied_offer: AppliedOffer | None = None
     messages: list[dict] = field(default_factory=list)
     order: dict | None = None
+    is_stagnant: bool = False
+    days_in_stock: int | None = None
 
 
 class SessionRepository:

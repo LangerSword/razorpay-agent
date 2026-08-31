@@ -1,9 +1,12 @@
+import time
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from razorpay_agent.checkout.catalog import Product, find_product
+from razorpay_agent.checkout.inventory import InventoryStore
 from razorpay_agent.checkout.offers import OfferPipeline
 from razorpay_agent.checkout.payments import PaymentOutcome, PaymentProvider
 from razorpay_agent.checkout.sessions import (
@@ -11,6 +14,8 @@ from razorpay_agent.checkout.sessions import (
     SessionRepository,
 )
 from razorpay_agent.core.currency import INR, resolve_currency
+from razorpay_agent.merchant import MERCHANT_NAME
+from razorpay_agent.storefront import INDEX_HTML_PATH
 
 STATUS_NOT_READY = "not_ready_for_payment"
 STATUS_READY = "ready_for_payment"
@@ -27,9 +32,30 @@ def build_app(
     payment_provider: PaymentProvider,
     eval_store=None,
     watchdog=None,
+    inventory: InventoryStore | None = None,
 ) -> FastAPI:
     app = FastAPI(title="razorpay-agent", version="0.1.0")
     app.state.payment_provider = payment_provider
+
+    # Tracks recent activity from an AI buyer-agent (signalled by the
+    # `X-Razorpay-Agent` header) so the storefront can show an agent-vs-human badge.
+    agent_presence: dict[str, float] = {"last_seen": 0.0}
+
+    @app.middleware("http")
+    async def track_agent_presence(request: Request, call_next):
+        if request.headers.get("x-razorpay-agent"):
+            agent_presence["last_seen"] = time.monotonic()
+        return await call_next(request)
+
+    @app.get("/storefront")
+    def storefront() -> HTMLResponse:
+        return HTMLResponse(INDEX_HTML_PATH.read_text(encoding="utf-8"))
+
+    @app.get("/storefront/status")
+    def storefront_status(mode: str | None = None) -> JSONResponse:
+        forced = mode == "agent"
+        active = forced or (time.monotonic() - agent_presence["last_seen"] < 30.0)
+        return JSONResponse({"merchant_name": MERCHANT_NAME, "agent_active": active})
 
     @app.get("/watchdog/status")
     def watchdog_status() -> dict[str, Any]:
@@ -126,8 +152,30 @@ def build_app(
 
         if not problems:
             cart_paise, target_sku, category = _cart_summary(state.items, catalog)
-            pipeline.propose_for_session(state, cart_paise, target_sku, category)
-            state.status = STATUS_READY
+            stagnant = False
+            max_days = 0
+            for entry in state.items:
+                product = find_product(catalog, entry["product_id"])
+                if product is not None and product.stagnant:
+                    stagnant = True
+                    if product.days_in_stock and product.days_in_stock > max_days:
+                        max_days = product.days_in_stock
+            state.is_stagnant = stagnant
+            state.days_in_stock = max_days if stagnant else None
+            if inventory is not None:
+                items = [(e["product_id"], e["quantity"]) for e in state.items]
+                if not inventory.reserve_for_session(state.id, items):
+                    problems.append(
+                        _message(
+                            "error",
+                            "out_of_stock",
+                            "$.items",
+                            "insufficient inventory for the requested quantity",
+                        )
+                    )
+            if not problems:
+                pipeline.propose_for_session(state, cart_paise, target_sku, category)
+                state.status = STATUS_READY
 
         state.messages = problems
         repository.save(state)
@@ -159,6 +207,19 @@ def build_app(
 
         if state.applied_offer is None:
             cart_paise, target_sku, category = _cart_summary(state.items, catalog)
+            if inventory is not None:
+                items = [(e["product_id"], e["quantity"]) for e in state.items]
+                if not inventory.reserve_for_session(state.id, items):
+                    state.messages = [
+                        _message(
+                            "error",
+                            "out_of_stock",
+                            "$.items",
+                            "insufficient inventory for the requested quantity",
+                        )
+                    ]
+                    repository.save(state)
+                    return _payload(state, catalog)
             pipeline.propose_for_session(state, cart_paise, target_sku, category)
 
         state.messages = []
@@ -193,6 +254,8 @@ def build_app(
                 "checkout_session_id": state.id,
                 "permalink_url": f"https://shop.example.test/orders/{state.id}",
             }
+            if inventory is not None:
+                inventory.commit_session(state.id)
             pipeline.resolve_accepted(state, charge_amount, base_total)
             state.applied_offer = None
             repository.save(state)
@@ -205,6 +268,8 @@ def build_app(
             if result.outcome is PaymentOutcome.DECLINED
             else "payment credential no longer valid"
         )
+        if inventory is not None:
+            inventory.release_session(state.id)
         pipeline.resolve_failed(state, f"{reason}; offer rolled back")
         state.applied_offer = None
         state.status = STATUS_NOT_READY
@@ -221,6 +286,8 @@ def build_app(
             raise HTTPException(409, f"session already {state.status}")
         if state.applied_offer is not None and state.applied_offer.gate_decision.allowed:
             pipeline.resolve_declined(state, "buyer canceled after offer")
+        if inventory is not None:
+            inventory.release_session(state.id)
         state.applied_offer = None
         state.status = STATUS_CANCELED
         repository.save(state)
