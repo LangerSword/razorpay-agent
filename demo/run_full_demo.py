@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import random
 import threading
 import time
 from datetime import datetime, timezone
@@ -21,13 +22,19 @@ from razorpay_agent.server import DEFAULT_DB_PATH, build_live_app
 
 DEMO_PORT = 8613
 
+# Softmax selection temperature for the live bandit (scale-independent z-units).
+# 0.0 = greedy argmax; higher = more exploration between bundle and discount.
+BANDIT_TEMPERATURE = 1.0
+
 
 def stamp() -> str:
     return datetime.now(timezone.utc).strftime("%H:%M:%S")
 
 
 def start_server():
-    app, audit_store, is_live = build_live_app(DEFAULT_DB_PATH)
+    app, audit_store, is_live = build_live_app(
+        DEFAULT_DB_PATH, temperature=BANDIT_TEMPERATURE, rng=random.Random()
+    )
     config = uvicorn.Config(app, host="127.0.0.1", port=DEMO_PORT, log_level="warning")
     server = uvicorn.Server(config)
     threading.Thread(target=server.run, daemon=True).start()
@@ -151,6 +158,60 @@ async def run_phases(runner: Runner, provider, is_live: bool, wait_seconds: int,
         "transcript": list(agent_c.transcript),
     }
 
+    runner.section("PHASE C2 - stagnant inventory clearance (structural catalog fact)")
+    agent_s, result_s = await purchase("sku-oldstock", 1, "tok_ok")
+    for line in agent_s.transcript:
+        runner.say(f"  buyer> {line}")
+    discount_line = next(
+        (ln for ln in agent_s.transcript if "merchant offered" in ln and "off" in ln),
+        None,
+    )
+    bundle_line = next(
+        (ln for ln in agent_s.transcript if "merchant suggested add-on" in ln),
+        None,
+    )
+    if discount_line:
+        offered_pct = ""
+        try:
+            offered_pct = discount_line.split("merchant offered")[1].split("%")[0].strip()
+        except IndexError:
+            offered_pct = ""
+        runner.say(
+            "  gate>   product flagged `stagnant: true` in the merchant catalog "
+            "-> clearance discount path engaged"
+            + (f", rendered {offered_pct}% off" if offered_pct else "")
+        )
+        runner.say(
+            "  gate>   both a deep discount and a bundle attachment are valid "
+            "clearance tactics (revenue either earns is welcome); softmax "
+            f"selection (temperature {BANDIT_TEMPERATURE}) lets the bandit pick "
+            "either from the full arm set"
+        )
+    elif bundle_line:
+        item = bundle_line.split("add-on")[1].split("at")[0].strip()
+        runner.say(
+            "  gate>   product flagged `stagnant: true` in the merchant catalog "
+            f"-> clearance handled via bundle upsell ({item}): the dead-stock unit "
+            "still clears AND the attachment adds revenue. Both tactics are valid "
+            f"and softmax selection (temperature {BANDIT_TEMPERATURE}) let the "
+            "bandit choose either from the full arm set"
+        )
+    else:
+        runner.say(
+            "  gate>   product flagged `stagnant: true` in the merchant catalog "
+            "-> no clearance offer surfaced"
+        )
+    runner.say(
+        "  gate>   (stagnant is a STRUCTURAL inventory fact fed from the catalog; "
+        "the decision layer can only read it as context, never set it)"
+    )
+    results["stagnant"] = {
+        "status": result_s.final_status,
+        "order": result_s.order,
+        "session": agent_s.last_session,
+        "transcript": list(agent_s.transcript),
+    }
+
     runner.section("PHASE D - live Razorpay settlement chain")
     agent_d, result_d = await purchase("sku-hoodie", 1, "tok_demo")
     for line in agent_d.transcript:
@@ -232,9 +293,10 @@ def write_outputs(runner: Runner, out_dir: Path, results: dict, db_path: str) ->
         "phase_a": "A accept flow",
         "phase_b": "B gate-cap moment",
         "phase_c": "C graceful failure",
+        "stagnant": "C2 stagnant clearance",
         "phase_d": "D live settlement",
     }
-    for key in ("phase_a", "phase_b", "phase_c", "phase_d"):
+    for key in ("phase_a", "phase_b", "phase_c", "stagnant", "phase_d"):
         data = results.get(key, {})
         order = (data.get("order") or {}).get("id") or "-"
         summary.append(

@@ -16,14 +16,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="one-time bandit pretraining over synthetic episodes")
     parser.add_argument("--sessions", type=int, default=DEFAULT_SESSIONS)
     parser.add_argument("--seed", type=int, default=20260823)
+    parser.add_argument("--temperature", type=float, default=1.0,
+                        help="softmax temperature for action selection "
+                             "(0 = greedy argmax)")
     parser.add_argument("--out", type=str, default=DEFAULT_OUT)
     args = parser.parse_args()
 
     print(
         f"[pretrain] training LinUCB policy over {args.sessions} synthetic sessions "
-        f"(seed {args.seed})..."
+        f"(seed {args.seed}, softmax temperature {args.temperature})..."
     )
-    policy = pretrain_policy(n_sessions=args.sessions, seed=args.seed)
+    policy = pretrain_policy(
+        n_sessions=args.sessions, seed=args.seed, temperature=args.temperature
+    )
     policy.save(args.out)
 
     state = json.loads(Path(args.out).read_text())

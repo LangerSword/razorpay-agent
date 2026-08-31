@@ -77,7 +77,7 @@ class TestEndToEndPurchase:
         assert result.final_status == "completed"
         assert result.order is not None
         assert result.order["checkout_session_id"] == agent.last_session["id"]
-        assert "discovered 5 products" in result.transcript[0]
+        assert "discovered 6 products" in result.transcript[0]
         run(agent.aclose())
 
     def test_buyer_accepts_a_worthwhile_discount(self):

@@ -155,7 +155,10 @@ class TestEncoderAndContextValidation:
             ContextEncoder(())
 
     def test_dimension_tracks_category_count(self):
-        assert encoder().dimension == len(CATEGORIES) + 3
+        # static features: intercept, cart/1000, allowance ratio, is_stagnant,
+        # cart/1000 * days_in_stock/100 (clearance relief) and is_stagnant * cart/1000
+        # (clearance penalty)
+        assert encoder().dimension == len(CATEGORIES) + 6
 
     def test_non_positive_cart_value_rejected(self):
         with pytest.raises(InvalidDecisionInput):

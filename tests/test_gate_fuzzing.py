@@ -53,12 +53,13 @@ def gate():
     return RulePolicyGate(config())
 
 
-def make_context(cart, allowance, already_offered=False, session_id="fuzz"):
+def make_context(cart, allowance, already_offered=False, session_id="fuzz", is_stagnant=False):
     return SessionContext(
         session_id=session_id,
         cart_value_inr=cart,
         buyer_allowance_inr=allowance,
         already_offered=already_offered,
+        is_stagnant=is_stagnant,
     )
 
 
@@ -91,10 +92,20 @@ TOLERANCE = 1e-6
 
 
 def assert_discount_limits_hold(final, context):
+    pct_cap = (
+        config().clearance_max_discount_percent
+        if context.is_stagnant
+        else config().max_discount_percent
+    )
+    rupee_cap = (
+        config().clearance_max_discount_rupee_cap
+        if context.is_stagnant
+        else config().max_discount_rupee_cap
+    )
     percent = float(final.discount_percent)
-    assert 0.0 < percent <= config().max_discount_percent + TOLERANCE
+    assert 0.0 < percent <= pct_cap + TOLERANCE
     rupee_amount = context.cart_value_inr * percent / 100.0
-    assert rupee_amount <= config().max_discount_rupee_cap + TOLERANCE
+    assert rupee_amount <= rupee_cap + TOLERANCE
     projected_total = context.cart_value_inr - rupee_amount
     assert projected_total <= context.buyer_allowance_inr + TOLERANCE
 
@@ -114,18 +125,27 @@ class TestDiscountFuzzing:
         percent=discount_percent_strategy,
         allowance=st.one_of(finite_money, st.just(0.01)),
         tight=st.booleans(),
+        is_stagnant=st.booleans(),
     )
     def test_allowed_or_rejected_discount_never_violates_limits(
-        self, cart, percent, allowance, tight
+        self, cart, percent, allowance, tight, is_stagnant
     ):
         if tight:
-            effective = min(percent, config().max_discount_percent)
-            best_case_rupee = min(
-                cart * effective / 100.0, config().max_discount_rupee_cap
+            pct_cap = (
+                config().clearance_max_discount_percent
+                if is_stagnant
+                else config().max_discount_percent
             )
+            rupee_cap = (
+                config().clearance_max_discount_rupee_cap
+                if is_stagnant
+                else config().max_discount_rupee_cap
+            )
+            effective = min(percent, pct_cap)
+            best_case_rupee = min(cart * effective / 100.0, rupee_cap)
             allowance = max(cart - best_case_rupee, 0.001)
 
-        context = make_context(cart, allowance)
+        context = make_context(cart, allowance, is_stagnant=is_stagnant)
         decision = gate().evaluate(discount_action(percent, cart), context)
 
         assert decision.reason
