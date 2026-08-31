@@ -1,9 +1,54 @@
 {
-  "generated_at": "2026-08-31T19:17:29.278287+00:00",
+  "generated_at": "2026-08-31T19:36:18.121316+00:00",
   "model": "nous",
   "provider": "nous",
-  "scenario_count": 1,
-  "selected_count": 0,
+  "scenario_count": 2,
+  "selected_count": 2,
   "min_score": 0.5,
-  "examples": []
+  "examples": [
+    {
+      "scenario": "pretrain-normal_discount",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "<<tool:get_catalog_item {\"sku\": \"sku-hoodie\"}>>\n<<tool:get_clearance_policy>>"
+        },
+        {
+          "role": "user",
+          "content": "TOOL_RESULT: get_catalog_item({\"sku\": \"sku-hoodie\"}) -> {\"id\": \"sku-hoodie\", \"title\": \"Zip-Up Hoodie\", \"category\": \"apparel\", \"unit_amount_paise\": 249900, \"stagnant\": false, \"days_in_stock\": null}"
+        },
+        {
+          "role": "assistant",
+          "content": "<<tool:get_bandit_scores {\"target_sku\": \"sku-hoodie\", \"item_category\": \"apparel\", \"cart_value_inr\": 2499, \"buyer_allowance_inr\": 100000, \"is_stagnant\": false, \"days_in_stock\": null}>>"
+        },
+        {
+          "role": "user",
+          "content": "TOOL_RESULT: get_bandit_scores({\"buyer_allowance_inr\": 100000, \"cart_value_inr\": 2499, \"days_in_stock\": null, \"is_stagnant\": false, \"item_category\": \"apparel\", \"target_sku\": \"sku-hoodie\"}) -> {\"d5\": 20.059447708061438, \"d10\": 20.059447708061438, \"d15\": 20.059447708061438, \"d20\": 20.059447708061438, \"d25\": 20.059447708061438, \"d35\": 20.059447708061438, \"d40\": 20.059447708061438, \"b_sku-socks\": 20.059447708061438, \"b_sku-charger\": 20.059447708061438}"
+        },
+        {
+          "role": "assistant",
+          "content": "The proposed 10% discount on the Zip-Up Hoodie (INR 2499) is sensible: it\u2019s a moderate discount that can encourage purchase while limiting revenue loss. It is bounded because the gate decision returned `allowed=true`, indicating compliance with the merchant\u2019s clearance policy limits (maximum percentage and rupee cap). The bandit scores are equal across all discount arms, so the algorithm has no strong preference for a different discount level; 10% is therefore a reasonable choice. The item is not stagnant, so this is a normal promotional discount rather than a clearance action. Overall, the offer is consistent with policy and well\u2011justified."
+        }
+      ],
+      "final_text": "The proposed 10% discount on the Zip-Up Hoodie (INR 2499) is sensible: it\u2019s a moderate discount that can encourage purchase while limiting revenue loss. It is bounded because the gate decision returned `allowed=true`, indicating compliance with the merchant\u2019s clearance policy limits (maximum percentage and rupee cap). The bandit scores are equal across all discount arms, so the algorithm has no strong preference for a different discount level; 10% is therefore a reasonable choice. The item is not stagnant, so this is a normal promotional discount rather than a clearance action. Overall, the offer is consistent with policy and well\u2011justified."
+    },
+    {
+      "scenario": "pretrain-normal_bundle",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "<<tool:get_catalog_item {\"sku\": \"sku-hoodie\"}>>\n<<tool:get_bandit_scores {\"target_sku\": \"sku-hoodie\", \"item_category\": \"apparel\", \"cart_value_inr\": 2499, \"buyer_allowance_inr\": 100000, \"is_stagnant\": false}>>"
+        },
+        {
+          "role": "user",
+          "content": "TOOL_RESULT: get_catalog_item({\"sku\": \"sku-hoodie\"}) -> {\"id\": \"sku-hoodie\", \"title\": \"Zip-Up Hoodie\", \"category\": \"apparel\", \"unit_amount_paise\": 249900, \"stagnant\": false, \"days_in_stock\": null}"
+        },
+        {
+          "role": "assistant",
+          "content": "The proposed offer adds **sku-socks** at **INR\u202f499** to the existing **sku-hoodie** (INR\u202f2\u202f499), bringing the new cart total to **INR\u202f2\u202f998**.  \n\n- **Bounded?** Yes. The total (INR\u202f2\u202f998) is far below the buyer\u2019s allowance (INR\u202f100\u202f000).  \n- **Consistent with policy?** The gate decision returned **allowed: true**, meaning the bundle price and any implied discount comply with the merchant\u2019s clearance limits and pricing rules.  \n- **Sensible?** The LinUCB bandit selected this bundle, and the gate approved it, indicating the algorithm expects a positive completion probability and/or net revenue uplift. Without the socks\u2019 regular price we cannot quantify the exact discount, but the gate\u2019s approval implies the discount is within allowed bounds.  \n\n**Recommendation:** The offer is acceptable\u2014it is bounded, policy\u2011compliant, and algorithmically supported. No red flags require blocking."
+        }
+      ],
+      "final_text": "The proposed offer adds **sku-socks** at **INR\u202f499** to the existing **sku-hoodie** (INR\u202f2\u202f499), bringing the new cart total to **INR\u202f2\u202f998**.  \n\n- **Bounded?** Yes. The total (INR\u202f2\u202f998) is far below the buyer\u2019s allowance (INR\u202f100\u202f000).  \n- **Consistent with policy?** The gate decision returned **allowed: true**, meaning the bundle price and any implied discount comply with the merchant\u2019s clearance limits and pricing rules.  \n- **Sensible?** The LinUCB bandit selected this bundle, and the gate approved it, indicating the algorithm expects a positive completion probability and/or net revenue uplift. Without the socks\u2019 regular price we cannot quantify the exact discount, but the gate\u2019s approval implies the discount is within allowed bounds.  \n\n**Recommendation:** The offer is acceptable\u2014it is bounded, policy\u2011compliant, and algorithmically supported. No red flags require blocking."
+    }
+  ]
 }

@@ -47,8 +47,9 @@ Available read-only tools:
 
 To call a tool, emit exactly one line of the form:
 <<tool:name {{"arg": value}}>>
-You may call at most one tool per turn. After gathering what you need, give a final
-recommendation as plain text. Do NOT propose settlement or payment. Keep it concise."""
+After 1-2 tool calls, stop gathering information and give your final
+recommendation as plain text. Do NOT propose settlement or payment.
+Keep it concise. Do NOT keep calling tools once you have enough context."""
 
 
 def _format_examples(examples: list[dict[str, Any]]) -> str:
@@ -144,8 +145,13 @@ class ReasoningAgent:
         final_text = ""
 
         try:
-            for _ in range(self._max_steps):
+            for step_num in range(self._max_steps):
                 prompt = _render_history(history)
+                if step_num == self._max_steps - 1:
+                    prompt += (
+                        "\n\nFINAL ANSWER REQUIRED: stop calling tools and give your "
+                        "recommendation as plain text now."
+                    )
                 text = self._llm.complete(prompt)
                 match = TOOL_CALL_RE.search(text)
                 if match:

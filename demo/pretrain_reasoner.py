@@ -160,6 +160,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=20260830)
     parser.add_argument("--out", type=str, default=DEFAULT_OUT)
     parser.add_argument("--min-score", type=float, default=0.7)
+    parser.add_argument("--verbose", action="store_true", default=False)
     args = parser.parse_args()
 
     store_path = ":memory:"
@@ -179,26 +180,35 @@ def main() -> None:
             bandit_action=scenario.get("bandit_action"),
             gate_decision=scenario.get("gate_decision"),
         )
-        raw.append(
-            {
-                "session_id": result.session_id,
-                "provider": result.provider,
-                "model": result.model,
-                "fallback": result.fallback,
-                "steps": [
-                    {
-                        "step": s.step,
-                        "role": s.role,
-                        "content": s.content,
-                        "provider": s.provider,
-                        "model": s.model,
-                    }
-                    for s in result.steps
-                ],
-                "final_text": result.final_text,
-                "scenario": scenario["name"],
-            }
-        )
+        trace = {
+            "session_id": result.session_id,
+            "provider": result.provider,
+            "model": result.model,
+            "fallback": result.fallback,
+            "steps": [
+                {
+                    "step": s.step,
+                    "role": s.role,
+                    "content": s.content,
+                    "provider": s.provider,
+                    "model": s.model,
+                }
+                for s in result.steps
+            ],
+            "final_text": result.final_text,
+            "scenario": scenario["name"],
+        }
+        raw.append(trace)
+
+        if args.verbose:
+            score = _score_trace(trace)
+            few = _to_few_shot(trace)
+            print(f"\n=== {result.session_id} ===")
+            print(f"  fallback={result.fallback}  score={score:.2f}  selectable={few is not None}")
+            for s in trace["steps"]:
+                print(f"  [{s['step']}] {s['role']}: {s['content'][:180]}")
+            print(f"  final: {(trace['final_text'] or '')[:200]}")
+
         import time
 
         time.sleep(2)
