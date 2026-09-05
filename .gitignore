@@ -3,8 +3,6 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
-build/
-dist/
 .venv/
 venv/
 .pytest_cache/
