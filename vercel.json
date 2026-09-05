@@ -6,12 +6,8 @@
       "use": "@vercel/python"
     },
     {
-      "src": "web/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist",
-        "installCommand": "rm -rf node_modules && npm install"
-      }
+      "src": "web/dist/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
