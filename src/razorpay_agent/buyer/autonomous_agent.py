@@ -24,8 +24,8 @@ from typing import Any, Callable
 
 import httpx2 as httpx
 
+from razorpay_agent.buyer.llm_response import LLMResponse, Verdict, strip_tool_calls
 from razorpay_agent.buyer.tools import BuyerDeps, build_buyer_registry
-from razorpay_agent.buyer.llm_response import LLMResponse, strip_tool_calls, Verdict
 
 
 @dataclass
@@ -159,9 +159,9 @@ class CartBuyerAgent:
         if item["id"] in self._personality.avoid:
             return False, f"avoiding {item['id']}"
         if item["unit_amount"] > self.remaining_budget:
-            return False, f"over budget"
+            return False, "over budget"
         if item["unit_amount"] > self._personality.max_single_purchase_paise:
-            return False, f"over single-purchase limit"
+            return False, "over single-purchase limit"
         return True, "within budget and interests"
     
     async def _resolve_llm(self) -> Any:
@@ -171,8 +171,9 @@ class CartBuyerAgent:
         
         # Try real LLM first (with generous timeout)
         try:
-            from razorpay_agent.reasoning.llm import resolve_provider
             import concurrent.futures
+
+            from razorpay_agent.reasoning.llm import resolve_provider
             
             def _get_llm():
                 llm = resolve_provider()
@@ -252,7 +253,7 @@ Use tools to check your budget and purchase history, then decide: ADD_TO_CART or
                     timeout=30.0
                 )
             except asyncio.TimeoutError:
-                self._note(f"  ❌ LLM timeout — skipping item")
+                self._note("  ❌ LLM timeout — skipping item")
                 return Verdict(decision="SKIP", rationale="LLM timeout", confidence=0.0)
             
             response = LLMResponse.parse(text)
@@ -295,7 +296,7 @@ Use tools to check your budget and purchase history, then decide: ADD_TO_CART or
             if not self._running:
                 break
             if self._evaluated >= self._personality.patience:
-                self._note(f"⏹️ Reached patience limit")
+                self._note("⏹️ Reached patience limit")
                 break
             if self.remaining_budget <= 0:
                 self._note("💰 Budget exhausted")
@@ -361,7 +362,7 @@ Use tools to check your budget and purchase history, then decide: ADD_TO_CART or
         
         resp = await client.post(f"/checkout_sessions/{session_id}/create-payment-link")
         if resp.status_code != 200:
-            self._note(f"  ❌ Failed to create payment link")
+            self._note("  ❌ Failed to create payment link")
             return None
         
         link_data = resp.json()

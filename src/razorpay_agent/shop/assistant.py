@@ -12,12 +12,11 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from dataclasses import dataclass
 
 from razorpay_agent.checkout.catalog import Product, find_product
-from razorpay_agent.reasoning.llm import LLMBackend, resolve_provider
 from razorpay_agent.decision.co_purchase_graph import CoPurchaseGraph
+from razorpay_agent.reasoning.llm import LLMBackend, resolve_provider
 
 
 @dataclass

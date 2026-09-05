@@ -13,7 +13,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-
 TOOL_CALL_RE = re.compile(
     r"(?:<<tool:(\w+)\s*(\{.*?\})?>>|<tool_call>(\w+)(?:\s*(\{.*?\}))?\s*(?:</tool_call>|$|<tool_call>))",
     re.DOTALL,
@@ -109,10 +108,10 @@ def _try_extract_verdict(text: str) -> Verdict | None:
         stripped = line.strip()
         if stripped == "Verdict: ADD_TO_CART":
             # Collect rationale from other lines
-            rationale = "\n".join(l.strip() for l in lines if l.strip() and l.strip() != stripped)
+            rationale = "\n".join(line.strip() for line in lines if line.strip() and line.strip() != stripped)
             return Verdict(decision="ADD_TO_CART", rationale=rationale[:500], confidence=0.9)
         elif stripped == "Verdict: SKIP":
-            rationale = "\n".join(l.strip() for l in lines if l.strip() and l.strip() != stripped)
+            rationale = "\n".join(line.strip() for line in lines if line.strip() and line.strip() != stripped)
             return Verdict(decision="SKIP", rationale=rationale[:500], confidence=0.9)
     
     # Fallback: look for keywords
@@ -130,5 +129,5 @@ def strip_tool_calls(text: str) -> str:
     text = re.sub(r"<<tool:\w+\s*\{.*?\}>>", "", text, flags=re.DOTALL)
     text = re.sub(r"<tool_call>\w+\s*\{.*?\}</tool_call>", "", text, flags=re.DOTALL)
     text = re.sub(r"<tool_call>\w+</tool_call>", "", text)
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
     return "\n".join(lines)

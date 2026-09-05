@@ -9,16 +9,20 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
+from razorpay_agent.buyer import CartBuyerAgent, Personality
 from razorpay_agent.checkout.catalog import Product, find_product
 from razorpay_agent.checkout.inventory import InventoryStore
 from razorpay_agent.checkout.offers import OfferPipeline
-from razorpay_agent.buyer import CartBuyerAgent, Personality
-from razorpay_agent.checkout.payments import PaymentOutcome, PaymentProvider, ScriptedPaymentProvider
+from razorpay_agent.checkout.payments import (
+    PaymentOutcome,
+    PaymentProvider,
+    ScriptedPaymentProvider,
+)
 from razorpay_agent.checkout.sessions import CheckoutSessionState, SessionRepository
 from razorpay_agent.core.currency import INR, resolve_currency
 from razorpay_agent.merchant import MERCHANT_NAME
-from fastapi.staticfiles import StaticFiles
 from razorpay_agent.storefront import INDEX_HTML_PATH, REACT_BUILD_PATH
 
 # Global thread-safe event bus for SSE and buyer message history
@@ -261,9 +265,10 @@ def build_app(
     def eval_offpolicy(alpha: float = 0.25) -> dict[str, Any]:
         if eval_store is None:
             return {"status": "eval_not_configured"}
+        import os
+
         from razorpay_agent.eval.offpolicy import estimate_candidate_alpha
         from razorpay_agent.server import PRETRAINED_BANDIT_PATH
-        import os
         if not os.path.exists(PRETRAINED_BANDIT_PATH):
             return {
                 "status": "no_policy_snapshot",
@@ -280,6 +285,7 @@ def build_app(
         if report is None:
             return {"status": "no_eval_run_recorded_yet", "honesty_note": None}
         import os
+
         from razorpay_agent.eval.offpolicy import estimate_candidate_alpha
         from razorpay_agent.server import PRETRAINED_BANDIT_PATH
         if os.path.exists(PRETRAINED_BANDIT_PATH):
@@ -318,9 +324,9 @@ def build_app(
 
     @app.post("/api/demo/start")
     def api_demo_start() -> dict[str, Any]:
+        import os
         import subprocess
         import sys
-        import os
         try:
             result = subprocess.run(
                 ['pgrep', '-f', 'python.*demo.run_full_demo'],

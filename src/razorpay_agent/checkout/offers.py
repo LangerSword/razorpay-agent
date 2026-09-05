@@ -150,7 +150,6 @@ class OfferPipeline:
                     forced_id = None
                 if forced_id is not None:
                     arm = self._policy._arms[forced_id]
-                    from razorpay_agent.decision.linucb import LinUCBPolicy
                     ctx = decision_context
                     features = self._policy._encoder.encode(ctx)
                     expected, bonus = self._policy._score(forced_id, features)
@@ -390,7 +389,6 @@ class OfferPipeline:
                 except Exception:
                     pass
             except Exception as exc:
-                import traceback
                 print(f"  [reasoner] ERROR {session_id}: {type(exc).__name__}: {exc}", flush=True)
                 state.reasoning_trace = {
                     "provider": "error",

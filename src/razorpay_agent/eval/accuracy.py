@@ -18,10 +18,8 @@ the bandit's simulator.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
-
 
 # ---------------------------------------------------------------------------
 # Buyer verdict grading
@@ -248,7 +246,7 @@ def run_buyer_accuracy_eval(
     Uses the ``buyer.reasoning_agent.evaluate_offer`` function with synthetic
     ACP session payloads.  Keyless — works with StubBackend and real LLMs alike.
     """
-    from razorpay_agent.buyer.reasoning_agent import evaluate_offer, PurchaseMemory
+    from razorpay_agent.buyer.reasoning_agent import PurchaseMemory, evaluate_offer
 
     if memory is None:
         memory = PurchaseMemory()

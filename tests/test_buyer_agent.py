@@ -155,8 +155,8 @@ class TestCancel:
 class TestBuyerReasoning:
     def test_buyer_reasoning_gives_clear_verdict(self):
         """Verify buyer reasoner produces a clear ACCEPT/DECLINE verdict."""
+        from razorpay_agent.buyer.reasoning_agent import PurchaseMemory, evaluate_offer
         from razorpay_agent.reasoning.llm import StubBackend
-        from razorpay_agent.buyer.reasoning_agent import evaluate_offer, PurchaseMemory
 
         # Session with a good discount (12% off sku-hoodie)
         session = {
@@ -193,8 +193,8 @@ class TestBuyerReasoning:
 
     def test_buyer_reasoning_declines_stingy_offer(self):
         """Verify buyer reasoner declines a below-threshold discount."""
+        from razorpay_agent.buyer.reasoning_agent import PurchaseMemory, evaluate_offer
         from razorpay_agent.reasoning.llm import StubBackend
-        from razorpay_agent.buyer.reasoning_agent import evaluate_offer, PurchaseMemory
 
         # Session with a 3% discount (below 5% minimum)
         session = {

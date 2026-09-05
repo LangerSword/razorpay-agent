@@ -5,6 +5,10 @@ import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from razorpay_agent.eval.accuracy import BuyerAccuracySummary, MerchantReasoningSummary
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS eval_runs (
@@ -219,7 +223,7 @@ class EvalStore:
 
     def record_buyer_accuracy_run(
         self,
-        summary: "BuyerAccuracySummary",
+        summary: BuyerAccuracySummary,
     ) -> int:
         with self._lock, self._connection:
             cursor = self._connection.execute(
@@ -252,7 +256,7 @@ class EvalStore:
 
     def record_merchant_reasoning_run(
         self,
-        summary: "MerchantReasoningSummary",
+        summary: MerchantReasoningSummary,
     ) -> int:
         with self._lock, self._connection:
             cursor = self._connection.execute(

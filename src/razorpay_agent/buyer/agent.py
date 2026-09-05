@@ -9,11 +9,9 @@ import httpx2 as httpx
 from razorpay_agent.buyer.reasoning_agent import (
     ACCEPT,
     DECLINE,
-    NO_OFFER,
     PurchaseMemory,
     PurchaseRecord,
     _effective_discount_percent,
-    _subtotal_of,
     _total_of,
     evaluate_offer,
 )
@@ -125,7 +123,6 @@ class BuyerAgent:
         if offer["type"] == "bundle_upsell":
             item_id = offer["item_id"]
             price = offer["unit_amount_paise"]
-            subtotal = _subtotal_of(session)
             self._note(
                 f"merchant suggested add-on {item_id} at {price} paise -> {verdict.verdict}"
             )

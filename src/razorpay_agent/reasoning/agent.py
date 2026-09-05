@@ -5,9 +5,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from razorpay_agent.gate.gate import RulePolicyGateConfig
 from razorpay_agent.reasoning.llm import LLMBackend, resolve_provider
 from razorpay_agent.reasoning.tools import ReasoningDeps, build_registry
-from razorpay_agent.gate.gate import RulePolicyGateConfig
 
 DEFAULT_MAX_STEPS = 6
 
@@ -39,7 +39,7 @@ def _strip_tool_calls(text: str) -> str:
     text = re.sub(r"<<tool:\w+\s*\{.*?\}>>", "", text, flags=re.DOTALL)
     text = re.sub(r"<tool_call>\w+\s*\{.*?\}</tool_call>", "", text, flags=re.DOTALL)
     text = re.sub(r"<tool_call>\w+</tool_call>", "", text)
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
     return "\n".join(lines)
 
 
@@ -123,7 +123,6 @@ def _extract_verdict(text: str) -> tuple[str, str]:
     
     lines = text.strip().split("\n")
     verdict = "NONE"
-    verdict_line = ""
     rationale_lines = []
     
     # Look for explicit verdict line — strict match first
@@ -131,18 +130,15 @@ def _extract_verdict(text: str) -> tuple[str, str]:
         stripped = line.strip()
         if stripped == "Verdict: APPROVE":
             verdict = "APPROVE"
-            verdict_line = stripped
-            rationale_lines = [l.strip() for l in lines[:i] if l.strip()]
+            rationale_lines = [line.strip() for line in lines[:i] if line.strip()]
             break
         elif stripped == "Verdict: REJECT":
             verdict = "REJECT"
-            verdict_line = stripped
-            rationale_lines = [l.strip() for l in lines[:i] if l.strip()]
+            rationale_lines = [line.strip() for line in lines[:i] if line.strip()]
             break
         elif stripped == "Verdict: REVIEW":
             verdict = "REVIEW"
-            verdict_line = stripped
-            rationale_lines = [l.strip() for l in lines[:i] if l.strip()]
+            rationale_lines = [line.strip() for line in lines[:i] if line.strip()]
             break
     
     # Fallback: check for keywords if no strict match
