@@ -421,8 +421,10 @@ def build_app(
                 except Exception:
                     pass
 
+            import httpx2 as httpx
             buyer_agent = CartBuyerAgent(
-                base_url="http://127.0.0.1:8613",
+                base_url="http://testserver",
+                transport=httpx.ASGITransport(app=app),
                 personality=personality,
                 callback=buyer_callback,
                 curated_ids=curated_list,
