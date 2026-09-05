@@ -7,7 +7,11 @@
     },
     {
       "src": "web/dist/**",
-      "use": "@vercel/static"
+      "use": "@vercel/static-build",
+      "config": {
+        "outputDirectory": "web/dist",
+        "buildCommand": "echo 'pre-built'"
+      }
     }
   ],
   "routes": [
@@ -17,7 +21,10 @@
     },
     {
       "src": "/assets/(.*)",
-      "dest": "web/dist/assets/$1"
+      "headers": {
+        "Content-Type": "application/javascript; charset=utf-8"
+      },
+      "continue": true
     },
     {
       "src": "/(.*)",
@@ -28,24 +35,6 @@
     "RAZORPAY_AGENT_LLM_PROVIDER": "stub"
   },
   "headers": [
-    {
-      "source": "/assets/(.*).js",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/javascript; charset=utf-8"
-        }
-      ]
-    },
-    {
-      "source": "/assets/(.*).css",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "text/css; charset=utf-8"
-        }
-      ]
-    },
     {
       "source": "/(.*)",
       "headers": [
@@ -60,18 +49,6 @@
         {
           "key": "X-Content-Type-Options",
           "value": "nosniff"
-        },
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, PUT, DELETE, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "*"
         }
       ]
     }
