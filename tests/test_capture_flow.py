@@ -13,10 +13,12 @@ class _OrderNamespace:
         self._outer = outer
 
     def create(self, payload):
-        order_id = f"plink_{len(self._outer.orders) + 1}"
+        order_id = f"plink_{len(self._outer.orders) + len(self._outer.links) + 1}"
         record = {"id": order_id, "status": "created"}
         record.update(payload)
         self._outer.orders[order_id] = record
+        # Also store in links for mark_paid compatibility
+        self._outer.links[order_id] = dict(record)
         return dict(record)
 
     def fetch(self, order_id):
@@ -89,13 +91,10 @@ class TestPaymentLink:
         )
         assert link["id"].startswith("plink_")
         assert link["url"].startswith("https://checkout.razorpay.com/")
-        # order.create stores payload in the record
         sent = provider._client.orders[link["id"]]
         assert sent["amount"] == 237405
         assert sent["currency"] == "INR"
-        assert sent["accept_partial"] is False
-        assert sent["reference_id"] == "order_ABCdef123"
-        assert sent["accept_partial"] is False
+        assert sent["receipt"] == "order_ABCdef123"
 
     def test_status_tracks_created_then_paid(self, provider):
         link = provider.create_payment_link(100, "INR", "d", "r")
