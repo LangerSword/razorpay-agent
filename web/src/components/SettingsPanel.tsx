@@ -30,11 +30,41 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   })
   const [saved, setSaved] = useState(false)
 
-  const handleSave = () => {
+  const handleSave = async () => {
     localStorage.setItem('common_settings', JSON.stringify(settings))
+    
+    // Send to backend for runtime BYOK (key stored in-memory only)
+    try {
+      await fetch('/api/settings/llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: settings.provider,
+          apiKey: settings.apiKey,
+          baseUrl: settings.baseUrl,
+          model: settings.model,
+        }),
+      })
+    } catch (e) {
+      console.warn('BYOK save failed (non-critical):', e)
+    }
+
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     dispatch({ type: 'SET_SETTINGS', settings })
+  }
+
+  const handleClear = async () => {
+    // Clear backend BYOK settings
+    try {
+      await fetch('/api/settings/llm', { method: 'DELETE' })
+    } catch (e) {
+      console.warn('BYOK clear failed (non-critical):', e)
+    }
+    setSettings(DEFAULT_SETTINGS)
+    localStorage.removeItem('common_settings')
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
   }
 
   const handleProviderChange = (provider: string) => {
@@ -105,6 +135,9 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn btn-primary" onClick={handleSave}>
               {saved ? '✓ Saved' : 'Save Settings'}
+            </button>
+            <button className="btn btn-secondary" onClick={handleClear}>
+              Clear Key
             </button>
             <button className="btn btn-secondary" onClick={onClose}>
               Cancel

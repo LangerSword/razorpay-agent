@@ -163,6 +163,7 @@ class StubBackend(LLMBackend):
                         f"Verdict: DECLINE"
                     )
             # Merchant prompt (no TOOL_RESULT)
+            import re
             sku = "sku-hoodie"
             match = re.search(r"target_sku:\s*(\S+)", prompt, re.IGNORECASE)
             if match:
@@ -179,10 +180,10 @@ class StubBackend(LLMBackend):
         
         # Detect bundle vs discount from the Bandit proposed line
         is_bundle = False
-        bandit_match = re.search(r"Bandit proposed:\s*\{[^}]*action_type[\"\s:]+\"bundle_upsell\"", prompt)
+        bandit_match = re.search(r"Bandit proposed:\s*\{[^}]*action_type[\"\\s:]+\"bundle_upsell\"", prompt)
         if bandit_match:
             is_bundle = True
-        prop_match = re.search(r"Bandit proposed:\s*\{[^}]*discount_percent[\"\s:]+([\d.]+)", prompt)
+        prop_match = re.search(r"Bandit proposed:\s*\{[^}]*discount_percent[\"\\s:]+([\d.]+)", prompt)
         if not prop_match:
             prop_match = re.search(r"Bandit proposed:\s*\"([^\"]+)\"", prompt)
         discount_pct = float(prop_match.group(1)) if prop_match else 10.0
@@ -223,6 +224,33 @@ class StubBackend(LLMBackend):
             lines.append("Verdict: APPROVE — bounded, proportionate, buyer-allowance-safe")
         
         return "\n".join(lines)
+
+
+class LazyBackend(LLMBackend):
+    """Proxy that re-resolves the actual backend on each call — enables runtime BYOK.
+
+    At startup, env vars may be empty (no key). The user sets BYOK via the UI,
+    which injects env vars. LazyBackend re-resolves the real backend on each
+    complete() call so the new key takes effect immediately.
+
+    Falls back to StubBackend if no key is configured — so the demo always runs.
+    """
+
+    @property
+    def name(self) -> str:
+        return "lazy"
+
+    @property
+    def model(self) -> str:
+        return "lazy"
+
+    def complete(self, prompt: str) -> str:
+        # Re-resolve on each call — BYOK may have been set via UI
+        backend = resolve_provider()
+        # Avoid infinite recursion: if we resolve to ourselves, use stub
+        if isinstance(backend, LazyBackend):
+            return StubBackend().complete(prompt)
+        return backend.complete(prompt)
 
 
 class OpenAIBackend(LLMBackend):
@@ -402,6 +430,8 @@ class NousBackend(OpenAICompatibleBackend):
     provider_name = "nous"
 
 
+# Default to LazyBackend so BYOK works at runtime
+register_provider("lazy", LazyBackend)
 register_provider("stub", StubBackend)
 register_provider("openai", OpenAIBackend)
 register_provider("anthropic", AnthropicBackend)
@@ -413,11 +443,10 @@ def resolve_provider(
     name: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> LLMBackend:
-    """Resolve an LLM backend with precedence: explicit -> config -> env -> default (stub).
+    """Resolve an LLM backend with precedence: explicit -> config -> env -> default (lazy).
 
-    Any failure constructing the requested backend (missing key, missing SDK, network
-    error at call time) safely falls back to the keyless ``StubBackend`` so the demo
-    always runs and the decision layer is never blocked on the reasoner.
+    Default is LazyBackend which re-resolves on each call — so BYOK set via UI
+    takes effect immediately. Falls back to StubBackend if no key configured.
     """
     config = config or {}
     load_dotenv_into_env()
@@ -425,10 +454,17 @@ def resolve_provider(
         name
         or config.get("provider")
         or os.environ.get("RAZORPAY_AGENT_LLM_PROVIDER")
-        or "stub"
+        or "lazy"
     )
+    # If user set provider via BYOK to a real backend name, use it directly
+    if resolved in ("openai", "anthropic", "tencent", "nous"):
+        try:
+            backend_cls = get_provider(resolved)
+            return backend_cls(config=config)
+        except Exception:
+            pass
+    # Use lazy by default (will re-resolve to stub or real backend on each call)
     try:
-        backend_cls = get_provider(resolved)
-        return backend_cls(config=config)
+        return LazyBackend()
     except Exception:
         return StubBackend(config=config)
