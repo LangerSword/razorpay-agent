@@ -12,6 +12,13 @@ class _OrderNamespace:
     def __init__(self, outer):
         self._outer = outer
 
+    def create(self, payload):
+        order_id = f"plink_{len(self._outer.orders) + 1}"
+        record = {"id": order_id, "status": "created"}
+        record.update(payload)
+        self._outer.orders[order_id] = record
+        return dict(record)
+
     def fetch(self, order_id):
         return dict(self._outer.orders[order_id])
 
@@ -81,10 +88,12 @@ class TestPaymentLink:
             reference="order_ABCdef123",
         )
         assert link["id"].startswith("plink_")
-        assert link["url"].startswith("https://rzp.io/")
-        sent = provider._client.created_link_payloads[-1]
+        assert link["url"].startswith("https://checkout.razorpay.com/")
+        # order.create stores payload in the record
+        sent = provider._client.orders[link["id"]]
         assert sent["amount"] == 237405
         assert sent["currency"] == "INR"
+        assert sent["accept_partial"] is False
         assert sent["reference_id"] == "order_ABCdef123"
         assert sent["accept_partial"] is False
 

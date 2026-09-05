@@ -999,6 +999,7 @@ def _payload(state: CheckoutSessionState, catalog: tuple[Product, ...]) -> dict[
             and offer.proposed_action.target == product.id
         ):
             discount = min(offer.discount_paise, base)
+        base_total += base
         line_items.append(
             {
                 "id": f"line_item_{index}_{product.id}",
