@@ -231,14 +231,16 @@ def build_serverless_app(
     pretrained_bandit_path: str | Path | None = PRETRAINED_BANDIT_PATH,
     temperature: float = 0.0,
     rng: random.Random | None = None,
-):
-    """Build app with in-memory stores for serverless (read-only FS)."""
+    byok_store: dict[str, dict] | None = None,
+) -> tuple[FastAPI, Repository, AuditStore]:
+    """Build app with in-memory stores for Vercel serverless."""
     return _build_app_common(
         db_path=None,
         pretrained_bandit_path=pretrained_bandit_path,
         temperature=temperature,
         rng=rng,
         use_db=False,
+        byok_store=byok_store or {},
     )
 
 
