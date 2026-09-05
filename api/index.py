@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 # Add src/ to path for Vercel's Python runtime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from razorpay_agent.server import build_serverless_app
 
@@ -18,9 +21,42 @@ app = _app
 application = _app
 handler = _app
 
+# Serve static files from web/dist/ if they exist
+DIST_DIR = Path(__file__).parent.parent / "web" / "dist"
+if DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_index():
+    """Serve the React SPA index.html at root."""
+    index_file = DIST_DIR / "index.html"
+    if index_file.exists():
+        return HTMLResponse(content=index_file.read_text(), status_code=200)
+    return HTMLResponse(content="<h1>Common — Razorpay Agent</h1><p>API running.</p>", status_code=200)
+
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str, request: Request):
+    """Serve static files for all other paths, fallback to index.html for SPA routing."""
+    # Don't intercept API routes
+    if full_path.startswith("api/"):
+        raise HTTPException(404, "API endpoint not found")
+    
+    # Try to serve the static file
+    file_path = DIST_DIR / full_path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(str(file_path))
+    
+    # Fallback to index.html for SPA routing
+    index_file = DIST_DIR / "index.html"
+    if index_file.exists():
+        return HTMLResponse(content=index_file.read_text(), status_code=200)
+    
+    raise HTTPException(404, "Not found")
+
 
 def mask_key(key: str) -> str:
-    """Mask an API key for safe display/logging."""
     if not key or len(key) < 8:
         return "***"
     return f"{key[:4]}...{key[-4:]}"
@@ -61,11 +97,7 @@ async def set_llm_settings(request: Any) -> dict:
     if model:
         os.environ[normalized.upper() + "_MODEL"] = model
 
-    return {
-        "status": "ok",
-        "provider": normalized,
-        "key_masked": mask_key(api_key),
-    }
+    return {"status": "ok", "provider": normalized, "key_masked": mask_key(api_key)}
 
 
 @app.get("/api/settings/llm")
