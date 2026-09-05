@@ -3,100 +3,929 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Plain Goods Co. — Storefront</title>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <title>Common · Everyday Goods for the Common Good</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root { --bg:#0f1115; --card:#171a21; --ink:#e8eaed; --muted:#9aa0aa; --accent:#5b8cff; --agent:#ffb02e; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-           background:var(--bg); color:var(--ink); }
-    header { display:flex; align-items:center; justify-content:space-between; padding:20px 28px;
-             border-bottom:1px solid #23262e; }
-    .brand { font-size:20px; font-weight:700; letter-spacing:.2px; }
-    .tagline { color:var(--muted); font-size:13px; margin-top:2px; }
-    .badge { font-size:13px; font-weight:600; padding:6px 12px; border-radius:999px; }
-    .badge.human { background:#1c2a1c; color:#7ee07e; border:1px solid #2f4a2f; }
-    .badge.agent { background:#33270a; color:var(--agent); border:1px solid #5a4410; }
-    main { padding:28px; display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:18px; }
-    .card { background:var(--card); border:1px solid #23262e; border-radius:14px; padding:18px; }
-    .card h3 { margin:0 0 6px; font-size:16px; }
-    .cat { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
-    .price { margin-top:12px; font-size:18px; font-weight:700; }
-    .note { color:var(--muted); font-size:12px; padding:0 28px 24px; max-width:680px; }
-    .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px;
-             background:var(--agent); animation:p 1.2s infinite; }
-    @keyframes p { 0%,100%{opacity:.3} 50%{opacity:1} }
+    :root {
+      --bg: #faf8f5;
+      --surface: #f5f0ea;
+      --surface2: #ede7df;
+      --surface3: #e4ddd4;
+      --ink: #1c1917;
+      --muted: #78716c;
+      --accent: #2d5a3d;
+      --accent-light: #3d7a52;
+      --accent-warm: #c4713b;
+      --buyer: #2d5a3d;
+      --merchant: #c4713b;
+      --green: #2d5a3d;
+      --red: #b8463c;
+      --border: #e8e0d8;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-xs: 6px;
+      --shadow-sm: 0 1px 2px rgba(28,25,23,0.04);
+      --shadow-md: 0 4px 16px rgba(28,25,23,0.08);
+      --shadow-lg: 0 12px 40px rgba(28,25,23,0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%231c1917' fill-opacity='0.015'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+
+    .serif { font-family: 'DM Serif Display', Georgia, 'Times New Roman', serif; }
+    .sans { font-family: 'Inter', system-ui, sans-serif; }
+
+    /* ── Layout ─────────────────────────────────────── */
+    .app { display: grid; grid-template-columns: 1fr 400px; height: 100vh; }
+    .stage { overflow-y: auto; }
+    .sidebar { background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+
+    /* ── Header ─────────────────────────────────────── */
+    .header {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(250,248,245,0.88);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand-logo {
+      width: 42px; height: 42px;
+      background: var(--accent);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-weight: 400; font-size: 18px; color: #fff;
+    }
+    .brand-text { display: flex; flex-direction: column; }
+    .brand-name { font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+    .brand-tag { font-size: 11px; color: var(--muted); font-weight: 500; }
+    .header-meta { display: flex; align-items: center; gap: 18px; }
+    .impact-pill {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; font-weight: 600;
+      padding: 6px 14px;
+      background: rgba(45,90,61,0.08);
+      color: var(--accent);
+      border-radius: 20px;
+    }
+    .impact-pill .count { font-weight: 800; font-size: 14px; }
+    .ts { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    /* ── Hero ───────────────────────────────────────── */
+    .hero {
+      background: linear-gradient(145deg, #1f3d2c 0%, #2d5a3d 40%, #3d6e4e 100%);
+      padding: 72px 28px;
+      color: #fff;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='200' height='200' viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M100 0L200 100L100 200L0 100z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      opacity: 0.5;
+    }
+    .hero-inner { position: relative; z-index: 1; max-width: 600px; margin: 0 auto; }
+    .hero h1 { font-family: 'DM Serif Display', Georgia, serif; font-size: 46px; font-weight: 400; margin-bottom: 12px; letter-spacing: -1px; line-height: 1.1; }
+    .hero p { font-size: 17px; opacity: 0.88; margin-bottom: 28px; line-height: 1.5; }
+    .hero-stats { display: flex; justify-content: center; gap: 48px; margin-top: 32px; }
+    .hero-stat { text-align: center; }
+    .hero-stat-value { font-family: 'DM Serif Display', Georgia, serif; font-size: 32px; font-weight: 400; }
+    .hero-stat-label { font-size: 11px; opacity: 0.7; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
+    .hero-mission-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 8px 18px; border-radius: 24px;
+      font-size: 13px; font-weight: 600;
+      margin-bottom: 24px;
+    }
+
+    /* ── Mission Section ────────────────────────────── */
+    .mission-section {
+      background: var(--surface2);
+      padding: 48px 28px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .mission-section h2 { font-family: 'DM Serif Display', Georgia, serif; font-size: 28px; font-weight: 400; margin-bottom: 8px; }
+    .mission-section p { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
+    .mission-steps { display: flex; justify-content: center; gap: 32px; flex-wrap: wrap; }
+    .mission-step { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 140px; }
+    .mission-step-icon {
+      width: 48px; height: 48px;
+      background: var(--accent);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; color: #fff;
+    }
+    .mission-step-text { font-size: 12px; font-weight: 600; color: var(--ink); line-height: 1.3; }
+
+    /* ── Agents Bar ─────────────────────────────────── */
+    .agents-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-bottom: 1px solid var(--border); }
+    .agent-pill { padding: 12px 28px; display: flex; align-items: center; gap: 10px; border-right: 1px solid var(--border); }
+    .agent-pill:last-child { border-right: none; }
+    .agent-pill.buyer { background: rgba(45,90,61,0.03); }
+    .agent-pill.merchant { background: rgba(196,113,59,0.03); }
+    .agent-pill.thinking { animation: pulse-bg 1.5s infinite; }
+    @keyframes pulse-bg { 0%,100% { background: rgba(45,90,61,0.03); } 50% { background: rgba(45,90,61,0.1); } }
+    .agent-pill.merchant.thinking { animation: pulse-bg-merchant 1.5s infinite; }
+    @keyframes pulse-bg-merchant { 0%,100% { background: rgba(196,113,59,0.03); } 50% { background: rgba(196,113,59,0.1); } }
+    .agent-pill-icon { font-size: 18px; }
+    .agent-pill-text { flex: 1; min-width: 0; }
+    .agent-pill-name { font-size: 12px; font-weight: 700; }
+    .agent-pill-status { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .agent-pill-badge { font-size: 10px; padding: 3px 8px; border-radius: 10px; font-weight: 700; }
+    .agent-pill-badge.idle { background: var(--surface2); color: var(--muted); }
+    .agent-pill-badge.active { background: rgba(45,90,61,0.12); color: var(--accent); }
+    .agent-pill-badge.waiting { background: rgba(196,113,59,0.12); color: var(--accent-warm); }
+
+    /* ── Main Content ───────────────────────────────── */
+    .main { padding: 28px; }
+
+    /* ── Filters ────────────────────────────────────── */
+    .filters { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+    .filter-btn {
+      padding: 7px 16px; border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+      color: var(--ink);
+    }
+    .filter-btn:hover { border-color: var(--muted); }
+    .filter-btn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+    /* ── Products Grid ──────────────────────────────── */
+    .products { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 24px; }
+    .product {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: all 0.25s ease;
+      cursor: pointer;
+      position: relative;
+    }
+    .product:hover { box-shadow: var(--shadow-md); border-color: transparent; }
+    .product.added { border-color: var(--green); box-shadow: 0 0 0 2px rgba(45,90,61,0.08); }
+    .product.skipped { opacity: 0.4; pointer-events: none; }
+
+    /* SVG Product Image */
+    .product-image {
+      width: 100%; height: 200px;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .product-image svg { width: 100%; height: 100%; }
+    .product-image-icon {
+      position: absolute;
+      font-size: 42px;
+      opacity: 0.9;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));
+    }
+
+    .product-badge { position: absolute; top: 12px; left: 12px; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; }
+    .product-badge.added { background: var(--green); color: #fff; }
+    .product-badge.skipped { background: var(--red); color: #fff; }
+    .product-badge.low-stock { background: #fef3c7; color: #92400e; }
+    .product-badge.clearance { background: #fee2e2; color: #991b1b; }
+    .product-mission-badge {
+      position: absolute; top: 12px; right: 12px;
+      background: var(--accent); color: #fff;
+      font-size: 10px; font-weight: 700;
+      padding: 4px 10px; border-radius: 20px;
+      display: flex; align-items: center; gap: 4px;
+    }
+
+    .product-info { padding: 16px; }
+    .product-category { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); margin-bottom: 4px; }
+    .product-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.2px; line-height: 1.2; }
+    .product-desc { font-size: 12px; color: var(--muted); line-height: 1.4; margin-bottom: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .product-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .product-rating { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; }
+    .product-rating-star { color: var(--accent-warm); }
+    .product-reviews { font-size: 11px; color: var(--muted); }
+    .product-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+    .product-tag { font-size: 10px; padding: 3px 8px; border-radius: 10px; background: var(--surface2); color: var(--muted); font-weight: 600; }
+    .product-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--border); }
+    .product-price { font-size: 18px; font-weight: 800; }
+    .product-stock { font-size: 11px; color: var(--muted); }
+    .product-stock.low { color: var(--red); font-weight: 700; }
+
+    /* ── Product Modal ──────────────────────────────── */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 100; display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s; }
+    .modal-overlay.active { display: flex; opacity: 1; }
+    .modal { background: #fff; border-radius: var(--radius); max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: modal-in 0.3s ease; }
+    @keyframes modal-in { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+    .modal-image { width: 100%; height: 380px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+    .modal-image svg { width: 100%; height: 100%; }
+    .modal-image-icon { position: absolute; font-size: 72px; opacity: 0.9; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2)); }
+    .modal-mission-badge {
+      position: absolute; top: 16px; right: 16px;
+      background: var(--accent); color: #fff;
+      font-size: 12px; font-weight: 700;
+      padding: 6px 14px; border-radius: 20px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .modal-details { padding: 28px; }
+    .modal-category { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); margin-bottom: 8px; }
+    .modal-title { font-family: 'DM Serif Display', Georgia, serif; font-size: 30px; font-weight: 400; letter-spacing: -0.5px; margin-bottom: 12px; line-height: 1.1; }
+    .modal-rating { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; }
+    .modal-rating-stars { color: var(--accent-warm); }
+    .modal-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 20px; }
+    .modal-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+    .modal-tag { font-size: 11px; padding: 5px 12px; border-radius: 20px; background: var(--surface2); font-weight: 600; color: var(--ink); }
+    .modal-proof {
+      background: rgba(45,90,61,0.05);
+      border: 1px solid rgba(45,90,61,0.15);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .modal-proof-title { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+    .modal-proof-text { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .modal-price-row { display: flex; align-items: center; justify-content: space-between; padding-top: 20px; border-top: 1px solid var(--border); }
+    .modal-price { font-family: 'DM Serif Display', Georgia, serif; font-size: 32px; font-weight: 400; }
+    .modal-stock { font-size: 13px; font-weight: 600; }
+    .modal-stock.in-stock { color: var(--green); }
+    .modal-stock.low { color: var(--red); }
+    .modal-close { position: absolute; top: 16px; left: 16px; width: 38px; height: 38px; border-radius: 50%; background: #fff; border: none; font-size: 18px; cursor: pointer; box-shadow: var(--shadow-md); z-index: 10; display: flex; align-items: center; justify-content: center; }
+
+    /* ── Cart Panel ─────────────────────────────────── */
+    .cart-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+    .cart-overlay.active { opacity: 1; pointer-events: auto; }
+    .cart-panel {
+      position: fixed; top: 0; right: 0; width: 400px; height: 100vh;
+      background: #fff; z-index: 201;
+      box-shadow: var(--shadow-lg);
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex; flex-direction: column;
+    }
+    .cart-panel.active { transform: translateX(0); }
+    .cart-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .cart-title { font-family: 'DM Serif Display', Georgia, serif; font-size: 20px; font-weight: 400; }
+    .cart-close { width: 34px; height: 34px; border-radius: 50%; background: var(--surface2); border: none; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .cart-items { flex: 1; overflow-y: auto; padding: 16px; }
+    .cart-item { display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid var(--border); }
+    .cart-item-image { width: 56px; height: 56px; border-radius: var(--radius-xs); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .cart-item-image svg { width: 100%; height: 100%; }
+    .cart-item-info { flex: 1; }
+    .cart-item-name { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+    .cart-item-price { font-size: 13px; font-weight: 600; color: var(--muted); }
+    .cart-empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .cart-empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .cart-footer { padding: 20px; border-top: 1px solid var(--border); background: var(--surface); }
+    .cart-impact {
+      background: rgba(45,90,61,0.06);
+      border-radius: var(--radius-xs);
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    .cart-impact-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent); }
+    .cart-impact-value { font-family: 'DM Serif Display', Georgia, serif; font-size: 22px; font-weight: 400; color: var(--accent); }
+    .cart-impact-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .cart-total-row { display: flex; justify-content: space-between; margin-bottom: 12px; }
+    .cart-total-label { font-size: 13px; font-weight: 600; }
+    .cart-total-value { font-size: 20px; font-weight: 800; }
+
+    /* ── Sidebar (Agent Panel) ──────────────────────── */
+    .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); }
+    .sidebar-title { font-family: 'DM Serif Display', Georgia, serif; font-size: 18px; font-weight: 400; }
+    .sidebar-subtitle { font-size: 12px; color: var(--muted); }
+    .sidebar-body { flex: 1; overflow-y: auto; padding: 20px; }
+    .controls { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+    .control-row { display: flex; flex-direction: column; gap: 6px; }
+    .control-row label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .control-row input, .control-row select { padding: 10px 12px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-xs); color: var(--ink); font-size: 14px; transition: border-color 0.2s; }
+    .control-row input:focus, .control-row select:focus { outline: none; border-color: var(--accent); }
+    .control-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .btn { padding: 12px 20px; border: none; border-radius: var(--radius-xs); font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s; width: 100%; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-light); }
+    .btn-secondary { background: #fff; color: var(--ink); border: 1px solid var(--border); }
+    .btn-secondary:hover:not(:disabled) { background: var(--surface2); }
+    .btn-danger { background: #fff; color: var(--red); border: 1px solid var(--red); }
+    .btn-warm { background: var(--accent-warm); color: #fff; }
+    .btn-warm:hover:not(:disabled) { background: #b8652f; }
+
+    /* ── Log ────────────────────────────────────────── */
+    .log { font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace; font-size: 11px; line-height: 1.6; max-height: 260px; overflow-y: auto; background: var(--surface2); border-radius: var(--radius-xs); padding: 12px; }
+    .log-entry { padding: 3px 0; border-bottom: 1px solid rgba(0,0,0,0.03); }
+    .log-entry:last-child { border-bottom: none; }
+    .log-entry .time { color: var(--muted); margin-right: 8px; font-size: 10px; }
+    .log-entry.buyer { color: var(--buyer); }
+    .log-entry.merchant { color: var(--merchant); }
+    .log-entry.tool { color: var(--accent-warm); }
+    .log-entry.system { color: var(--muted); }
+
+    /* ── Empty State ────────────────────────────────── */
+    .empty-state { text-align: center; padding: 80px 20px; }
+    .empty-state .icon { font-size: 64px; margin-bottom: 16px; }
+    .empty-state .title { font-family: 'DM Serif Display', Georgia, serif; font-size: 28px; font-weight: 400; margin-bottom: 8px; }
+    .empty-state .desc { font-size: 14px; color: var(--muted); line-height: 1.6; max-width: 400px; margin: 0 auto; }
+
+    /* ── Toast ──────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px);
+      background: var(--accent); color: #fff;
+      padding: 12px 24px; border-radius: 24px;
+      font-size: 13px; font-weight: 600;
+      box-shadow: var(--shadow-lg);
+      z-index: 300;
+      opacity: 0;
+      transition: all 0.3s ease;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .modal-grid { grid-template-columns: 1fr; }
+      .modal-image { height: 240px; }
+      .hero h1 { font-size: 34px; }
+      .hero-stats { gap: 28px; }
+    }
   </style>
 </head>
 <body>
-  <div id="root"></div>
-
-  <script type="text/babel">
-    const AGENT_WINDOW = 30; // seconds
-
-    function fmtPaise(p) {
-      return "₹" + (p / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 });
-    }
-
-    function ProductCard({ item }) {
-      return (
-        <div className="card">
-          <div className="cat">{item.category}</div>
-          <h3>{item.title}</h3>
-          <div className="price">{fmtPaise(item.unit_amount)}</div>
-        </div>
-      );
-    }
-
-    function App() {
-      const [items, setItems] = React.useState([]);
-      const [meta, setMeta] = React.useState({ merchant_name: "Plain Goods Co.", agent_active: false });
-      const forced = new URLSearchParams(window.location.search).get("mode") === "agent";
-
-      React.useEffect(() => {
-        let alive = true;
-        async function tick() {
-          try {
-            const [p, s] = await Promise.all([
-              fetch("/products").then(r => r.json()),
-              fetch("/storefront/status" + (forced ? "?mode=agent" : "")).then(r => r.json()),
-            ]);
-            if (alive) { setItems(p.items); setMeta(s); }
-          } catch (e) { /* keep last good state */ }
-        }
-        tick();
-        const id = setInterval(tick, 3000);
-        return () => { alive = false; clearInterval(id); };
-      }, [forced]);
-
-      const agent = forced || meta.agent_active;
-      return (
-        <React.Fragment>
-          <header>
-            <div>
-              <div className="brand">{meta.merchant_name}</div>
-              <div className="tagline">razorpay-agent demo storefront · fed by the ACP /products feed</div>
-            </div>
-            {agent
-              ? <div className="badge agent"><span className="pulse"></span>Agent browsing</div>
-              : <div className="badge human">Human browsing</div>}
-          </header>
-          <main>
-            {items.map(it => <ProductCard key={it.id} item={it} />)}
-            {items.length === 0 && <div className="note">Loading product feed…</div>}
-          </main>
-          <div className="note">
-            This is a thin visual layer over the merchant's existing agent-to-agent commerce
-            (ACP) product feed. The badge flips to “Agent browsing” whenever an AI buyer-agent
-            is actively driving a checkout session.
+  <div class="app">
+    <!-- ── Stage ─────────────────────────────────────── -->
+    <div class="stage">
+      <div class="header">
+        <div class="brand">
+          <div class="brand-logo">C</div>
+          <div class="brand-text">
+            <div class="brand-name">Common</div>
+            <div class="brand-tag">Everyday goods for the common good.</div>
           </div>
-        </React.Fragment>
-      );
+        </div>
+        <div class="header-meta">
+          <div class="impact-pill">
+            <span>♥</span>
+            <span class="count" id="header-impact">12,341</span>
+            <span>items donated</span>
+          </div>
+          <div class="ts" id="ts">--:--:--</div>
+        </div>
+      </div>
+
+      <div class="hero">
+        <div class="hero-inner">
+          <div class="hero-mission-badge">♥ One-for-One</div>
+          <h1>Buy One, Give One.</h1>
+          <p>Every purchase donates an item to someone in need. Shop with purpose — our AI buyer discovers products, and your impact grows with every buy.</p>
+          <div class="hero-stats">
+            <div class="hero-stat"><div class="hero-stat-value">15</div><div class="hero-stat-label">Products</div></div>
+            <div class="hero-stat"><div class="hero-stat-value">2</div><div class="hero-stat-label">AI Agents</div></div>
+            <div class="hero-stat"><div class="hero-stat-value" id="hero-donated">12,341</div><div class="hero-stat-label">Donated</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mission-section">
+        <h2>How It Works</h2>
+        <p>Simple. Transparent. Impactful.</p>
+        <div class="mission-steps">
+          <div class="mission-step">
+            <div class="mission-step-icon">🛍️</div>
+            <div class="mission-step-text">You shop our curated goods</div>
+          </div>
+          <div class="mission-step">
+            <div class="mission-step-icon">🤖</div>
+            <div class="mission-step-text">AI buyer discovers & reasons</div>
+          </div>
+          <div class="mission-step">
+            <div class="mission-step-icon">♥</div>
+            <div class="mission-step-text">We donate one for every buy</div>
+          </div>
+          <div class="mission-step">
+            <div class="mission-step-icon">📦</div>
+            <div class="mission-step-text">Goes to someone in need</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="agents-bar">
+        <div class="agent-pill buyer" id="buyer-pill">
+          <span class="agent-pill-icon">🛒</span>
+          <div class="agent-pill-text">
+            <div class="agent-pill-name">AutoBuyer</div>
+            <div class="agent-pill-status" id="buyer-status-text">Idle</div>
+          </div>
+          <span class="agent-pill-badge idle" id="buyer-pill-badge">IDLE</span>
+        </div>
+        <div class="agent-pill merchant" id="merchant-pill">
+          <span class="agent-pill-icon">🏪</span>
+          <div class="agent-pill-text">
+            <div class="agent-pill-name">MerchantAgent</div>
+            <div class="agent-pill-status" id="merchant-status-text">Idle</div>
+          </div>
+          <span class="agent-pill-badge idle" id="merchant-pill-badge">IDLE</span>
+        </div>
+      </div>
+
+      <div class="main">
+        <div id="content">
+          <div class="empty-state">
+            <div class="icon">🤖</div>
+            <div class="title">Ready to shop with purpose</div>
+            <div class="desc">Configure your buyer in the sidebar and click Start.<br>The buyer shops, the merchant negotiates, and every purchase donates.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Sidebar (Agent Panel) ─────────────────────── -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Agent Panel</div>
+        <div class="sidebar-subtitle">Configure & control</div>
+      </div>
+      <div class="sidebar-body">
+        <div class="controls">
+          <div class="control-row">
+            <label>Interests</label>
+            <input type="text" id="interests" placeholder="apparel, kitchen, home" value="home, kitchen" />
+          </div>
+          <div class="control-row">
+            <label>Budget (₹)</label>
+            <input type="number" id="budget" value="10000" min="1000" step="500" />
+          </div>
+          <div class="control-row">
+            <label>Patience</label>
+            <input type="number" id="patience" value="5" min="3" max="15" step="1" />
+          </div>
+          <div class="control-row">
+            <label>Style</label>
+            <select id="style">
+              <option value="analytical">Analytical — careful</option>
+              <option value="casual">Casual — relaxed</option>
+              <option value="aggressive">Aggressive — deal hunter</option>
+              <option value="passive">Passive — quick</option>
+            </select>
+          </div>
+          <div class="control-check">
+            <input type="checkbox" id="demoAutoPay" checked />
+            <label for="demoAutoPay">Auto-pay (demo)</label>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="startBtn" onclick="startDemo()">▶ Start Shopping</button>
+        <div style="height: 8px;"></div>
+        <button class="btn btn-secondary" onclick="openCart()">🛒 Cart (<span id="cart-count">0</span>)</button>
+        <div style="height: 8px;"></div>
+        <button class="btn btn-danger" onclick="resetDemo()">↺ Reset</button>
+
+        <div style="margin-top: 24px;">
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin-bottom:8px;">Live Reasoning</div>
+          <div class="log" id="log">
+            <div class="log-entry system"><span class="time">--:--:--</span>Ready</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Cart Panel ─────────────────────────────────── -->
+  <div class="cart-overlay" id="cart-overlay" onclick="closeCart()"></div>
+  <div class="cart-panel" id="cart-panel">
+    <div class="cart-header">
+      <div class="cart-title">Your Cart</div>
+      <button class="cart-close" onclick="closeCart()">✕</button>
+    </div>
+    <div class="cart-items" id="cart-items">
+      <div class="cart-empty"><div class="cart-empty-icon">🛒</div>Your cart is empty</div>
+    </div>
+    <div class="cart-footer">
+      <div class="cart-impact">
+        <div class="cart-impact-label">Your Impact</div>
+        <div class="cart-impact-value" id="cart-impact-count">0 items donated</div>
+        <div class="cart-impact-sub">through this purchase</div>
+      </div>
+      <div class="cart-total-row">
+        <span class="cart-total-label">Total</span>
+        <span class="cart-total-value" id="cart-total">₹0</span>
+      </div>
+      <button class="btn btn-primary" onclick="closeCart(); showToast('Demo only — agent handles checkout')">Checkout</button>
+    </div>
+  </div>
+
+  <!-- ── Product Modal ──────────────────────────────── -->
+  <div class="modal-overlay" id="product-modal">
+    <div class="modal" id="modal-content"></div>
+  </div>
+
+  <!-- ── Toast ──────────────────────────────────────── -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ── Product SVG Image Generator ───────────────────
+    const categoryTheme = {
+      home:           { bg1: '#d4a574', bg2: '#c4956a', icon: '🕯️', pattern: 'circle' },
+      personal_care:  { bg1: '#7eb8c9', bg2: '#6da8ba', icon: '🧴', pattern: 'wave' },
+      apparel:        { bg1: '#a8a29e', bg2: '#928b85', icon: '👕', pattern: 'dots' },
+      kitchen:        { bg1: '#c4956a', bg2: '#b8876a', icon: '☕', pattern: 'grid' },
+      stationery:     { bg1: '#8fa8b8', bg2: '#7f98a8', icon: '📓', pattern: 'lines' },
+    };
+
+    function productImageSVG(category, size, imageUrl) {
+      const theme = categoryTheme[category] || categoryTheme.home;
+      let pattern = '';
+      if (theme.pattern === 'circle') {
+        pattern = `<circle cx="50%" cy="50%" r="35%" fill="rgba(255,255,255,0.06)"/><circle cx="50%" cy="50%" r="22%" fill="rgba(255,255,255,0.04)"/>`;
+      } else if (theme.pattern === 'wave') {
+        pattern = `<path d="M0 70 Q25 60 50 70 T100 70" stroke="rgba(255,255,255,0.08)" stroke-width="2" fill="none"/><path d="M0 80 Q25 70 50 80 T100 80" stroke="rgba(255,255,255,0.06)" stroke-width="1.5" fill="none"/>`;
+      } else if (theme.pattern === 'dots') {
+        pattern = `<circle cx="20%" cy="25%" r="2" fill="rgba(255,255,255,0.08)"/><circle cx="75%" cy="30%" r="1.5" fill="rgba(255,255,255,0.06)"/><circle cx="40%" cy="70%" r="2" fill="rgba(255,255,255,0.08)"/><circle cx="80%" cy="65%" r="1.5" fill="rgba(255,255,255,0.06)"/><circle cx="15%" cy="60%" r="1" fill="rgba(255,255,255,0.05)"/>`;
+      } else if (theme.pattern === 'grid') {
+        pattern = `<rect x="15%" y="15%" width="20%" height="20%" rx="4" fill="rgba(255,255,255,0.05)"/><rect x="60%" y="55%" width="25%" height="25%" rx="4" fill="rgba(255,255,255,0.04)"/>`;
+      } else if (theme.pattern === 'lines') {
+        pattern = `<line x1="10%" y1="30%" x2="40%" y2="30%" stroke="rgba(255,255,255,0.08)" stroke-width="1"/><line x1="60%" y1="65%" x2="85%" y2="65%" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>`;
+      }
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 ${size||200}" preserveAspectRatio="xMidYMid slice">
+        <defs><linearGradient id="g${category.replace('_','')}_${Math.random().toString(36).slice(2,7)}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:${theme.bg1}"/>
+          <stop offset="100%" style="stop-color:${theme.bg2}"/>
+        </linearGradient></defs>
+        <rect width="100%" height="100%" fill="url(#g${category.replace('_','')}_${Math.random().toString(36).slice(2,7)})"/>
+        ${pattern}
+      </svg>`;
+      if (imageUrl) {
+        return `<div style="position:relative;width:100%;height:100%;">
+          <img src="${imageUrl}" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;background:${theme.bg1};" onerror="this.style.display='none'"/>
+          <div style="position:absolute;inset:0;z-index:0;">${svg}</div>
+          <span class="product-image-icon" style="z-index:2;">${theme.icon}</span>
+        </div>`;
+      }
+      return `<div style="position:relative;width:100%;height:100%;">${svg}<span class="product-image-icon" style="z-index:1;">${theme.icon}</span></div>`;
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    // ── State ─────────────────────────────────────────
+    let products = [], cart = [], running = false, curatedIds = [], totalDonated = 12341;
+
+    function updateTs() { document.getElementById('ts').textContent = new Date().toLocaleTimeString('en-US', { hour12: false }); }
+    setInterval(updateTs, 1000);
+
+    function updateImpactCounter() {
+      const el = document.getElementById('header-impact');
+      const heroEl = document.getElementById('hero-donated');
+      if (el) el.textContent = totalDonated.toLocaleString('en-US');
+      if (heroEl) heroEl.textContent = totalDonated.toLocaleString('en-US');
+    }
+
+    function log(msg, type) {
+      const el = document.getElementById('log');
+      const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type || ''}`;
+      entry.innerHTML = `<span class="time">${now}</span>${msg}`;
+      el.appendChild(entry);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function setAgentThinking(agent, thinking) {
+      const pill = document.getElementById(`${agent}-pill`);
+      const badge = document.getElementById(`${agent}-pill-badge`);
+      pill.classList.toggle('thinking', thinking);
+      if (thinking) {
+        badge.className = 'agent-pill-badge active';
+        badge.textContent = 'ACTING';
+        document.getElementById(`${agent}-status-text`).textContent = 'Working...';
+      }
+    }
+
+    function setAgentStatus(agent, status, text) {
+      const badge = document.getElementById(`${agent}-pill-badge`);
+      const statusText = document.getElementById(`${agent}-status-text`);
+      badge.className = `agent-pill-badge ${status}`;
+      badge.textContent = status.toUpperCase();
+      statusText.textContent = text;
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.innerHTML = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2400);
+    }
+
+    function renderProducts() {
+      const el = document.getElementById('content');
+      el.innerHTML = `
+        <div class="filters">
+          <button class="filter-btn active" onclick="filterCategory('all', this)">All</button>
+          <button class="filter-btn" onclick="filterCategory('home', this)">Home</button>
+          <button class="filter-btn" onclick="filterCategory('kitchen', this)">Kitchen</button>
+          <button class="filter-btn" onclick="filterCategory('apparel', this)">Apparel</button>
+          <button class="filter-btn" onclick="filterCategory('personal_care', this)">Personal Care</button>
+          <button class="filter-btn" onclick="filterCategory('stationery', this)">Stationery</button>
+        </div>
+        <div class="products" id="products-grid"></div>`;
+      const grid = document.getElementById('products-grid');
+      grid.innerHTML = products.map(p => {
+        const theme = categoryTheme[p.category] || categoryTheme.home;
+        const lowStock = p.stock < 10 ? `<span class="product-badge low-stock">Only ${p.stock} left</span>` : '';
+        const clearance = p.stagnant ? `<span class="product-badge clearance">Clearance</span>` : '';
+        return `
+        <div class="product" id="product-${p.id}" onclick="openProductModal('${p.id}')">
+          ${lowStock}${clearance}
+          <div class="product-image">
+            ${productImageSVG(p.category, 200, p.image_url)}
+            <span class="product-image-icon">${theme.icon}</span>
+          </div>
+          <span class="product-mission-badge">♥ 1 Donated</span>
+          <div class="product-info">
+            <div class="product-category">${p.category.replace('_', ' ')}</div>
+            <div class="product-name">${p.title}</div>
+            <div class="product-desc">${p.description}</div>
+            <div class="product-meta">
+              <div class="product-rating"><span class="product-rating-star">★</span> ${p.rating}</div>
+              <div class="product-reviews">(${p.reviews})</div>
+            </div>
+            <div class="product-tags">${p.tags.map(t => `<span class="product-tag">${t}</span>`).join('')}</div>
+            <div class="product-footer">
+              <div class="product-price">₹${p.price_inr.toFixed(0)}</div>
+              <div class="product-stock ${p.stock < 10 ? 'low' : ''}">${p.stock < 10 ? 'Low stock' : 'In stock'}</div>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function filterCategory(cat, btn) {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.product').forEach(card => {
+        if (cat === 'all' || card.querySelector('.product-category')?.textContent.toLowerCase().replace(' ', '_') === cat) {
+          card.style.display = '';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    function openProductModal(productId) {
+      const p = products.find(p => p.id === productId);
+      if (!p) return;
+      const theme = categoryTheme[p.category] || categoryTheme.home;
+      const modal = document.getElementById('product-modal');
+      const content = document.getElementById('modal-content');
+      content.innerHTML = `
+        <button class="modal-close" onclick="closeProductModal()">✕</button>
+        <div class="modal-grid">
+          <div class="modal-image">
+            ${productImageSVG(p.category, 400)}
+            <span class="modal-image-icon">${theme.icon}</span>
+            <span class="modal-mission-badge">♥ 1 Donated</span>
+          </div>
+          <div class="modal-details">
+            <div class="modal-category">${p.category.replace('_', ' ')}</div>
+            <h2 class="modal-title">${p.title}</h2>
+            <div class="modal-rating">
+              <span class="modal-rating-stars">${'★'.repeat(Math.round(p.rating))}${'☆'.repeat(5-Math.round(p.rating))}</span>
+              <span>${p.rating} (${p.reviews} reviews)</span>
+            </div>
+            <p class="modal-desc">${p.description}</p>
+            <div class="modal-tags">${p.tags.map(t => `<span class="modal-tag">${t}</span>`).join('')}</div>
+            <div class="modal-proof">
+              <div class="modal-proof-title">♥ Your Impact</div>
+              <div class="modal-proof-text">With this purchase, we donate one ${p.category === 'personal_care' ? 'personal care item' : p.category === 'apparel' ? 'clothing item' : p.category} to someone in need. Every single order creates real impact.</div>
+            </div>
+            <div class="modal-price-row">
+              <div>
+                <div class="modal-price">₹${p.price_inr.toFixed(0)}</div>
+                <div class="modal-stock ${p.stock < 10 ? 'low' : 'in-stock'}">${p.stock < 10 ? `Only ${p.stock} left` : 'In stock'}</div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      modal.classList.add('active');
+    }
+
+    function closeProductModal() { document.getElementById('product-modal').classList.remove('active'); }
+
+    function markProduct(name, action) {
+      const card = [...document.querySelectorAll('.product')].find(c => c.querySelector('.product-name')?.textContent === name);
+      if (!card) return;
+      card.classList.add(action);
+      if (action === 'added') {
+        const existing = card.querySelector('.product-badge.added');
+        if (!existing) {
+          const span = document.createElement('span');
+          span.className = 'product-badge added';
+          span.textContent = '✓ IN CART';
+          card.appendChild(span);
+        }
+      } else {
+        const existing = card.querySelector('.product-badge.skipped');
+        if (!existing) {
+          const span = document.createElement('span');
+          span.className = 'product-badge skipped';
+          span.textContent = '✗ SKIPPED';
+          card.appendChild(span);
+        }
+      }
+    }
+
+    function updateCart() {
+      const itemsEl = document.getElementById('cart-items');
+      const totalEl = document.getElementById('cart-total');
+      const countEl = document.getElementById('cart-count');
+      const impactEl = document.getElementById('cart-impact-count');
+      countEl.textContent = cart.length;
+      impactEl.textContent = `${cart.length} item${cart.length !== 1 ? 's' : ''} donated`;
+      if (cart.length === 0) {
+        itemsEl.innerHTML = '<div class="cart-empty"><div class="cart-empty-icon">🛒</div>Your cart is empty</div>';
+        totalEl.textContent = '₹0';
+        return;
+      }
+      itemsEl.innerHTML = cart.map(item => {
+        const theme = categoryTheme[item.category] || categoryTheme.home;
+        return `
+        <div class="cart-item">
+          <div class="cart-item-image">${productImageSVG(item.category, 56)}</div>
+          <div class="cart-item-info">
+            <div class="cart-item-name">${item.name}</div>
+            <div class="cart-item-price">₹${item.price.toFixed(0)}</div>
+          </div>
+        </div>`;
+      }).join('');
+      const total = cart.reduce((s, i) => s + i.price, 0);
+      totalEl.textContent = `₹${total.toLocaleString('en-IN')}`;
+    }
+
+    function openCart() {
+      document.getElementById('cart-overlay').classList.add('active');
+      document.getElementById('cart-panel').classList.add('active');
+    }
+    function closeCart() {
+      document.getElementById('cart-overlay').classList.remove('active');
+      document.getElementById('cart-panel').classList.remove('active');
+    }
+
+    async function startDemo() {
+      if (running) return;
+      running = true;
+      const style = document.getElementById('style').value;
+      const budget = parseInt(document.getElementById('budget').value);
+      const patience = parseInt(document.getElementById('patience').value);
+      const demoAutoPay = document.getElementById('demoAutoPay').checked;
+      const interests = document.getElementById('interests').value.split(',').map(s => s.trim());
+      document.getElementById('startBtn').disabled = true;
+
+      try {
+        const greetRes = await fetch('/api/shop/greet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ interests, budget, style }),
+        });
+        if (!greetRes.ok) throw new Error('Greeting failed');
+        const greetData = await greetRes.json();
+        products = greetData.recommendations || [];
+        curatedIds = products.map(p => p.id);
+        renderProducts();
+        log(`Shop assistant: ${greetData.greeting}`, 'merchant');
+        setAgentStatus('merchant', 'waiting', 'Waiting for buyer');
+
+        await sleep(800);
+
+        const startRes = await fetch('/api/autonomous/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ interests: interests.join(','), budget, style, demo_auto_pay: demoAutoPay, curated_ids: curatedIds.join(',') }),
+        });
+        if (!startRes.ok) throw new Error('Failed to start');
+
+        await pollBuyerMessages();
+
+      } catch (err) {
+        log(`Error: ${err.message}`, 'system');
+      }
+      running = false;
+      document.getElementById('startBtn').disabled = false;
+    }
+
+    async function pollBuyerMessages() {
+      let lastCount = 0, done = false;
+      const start = Date.now();
+      while (!done && Date.now() - start < 180000) {
+        try {
+          const res = await fetch('/api/buyer-messages?limit=50');
+          if (!res.ok) { await sleep(800); continue; }
+          const msgs = await res.json();
+          const messages = msgs.messages || [];
+          for (let i = lastCount; i < messages.length; i++) processMessage(messages[i].message);
+          lastCount = messages.length;
+          for (const m of messages) {
+            if (m.message.includes('🏁 Complete') || m.message.includes('🏁 No items')) done = true;
+          }
+          if (done) break;
+        } catch (e) {}
+        await sleep(1500);
+      }
+    }
+
+    function processMessage(msg) {
+      // Tool calls
+      if (msg.includes('🔧')) {
+        const match = msg.match(/🔧\s*(\w+)\(([^)]+)\)/);
+        if (match) log(`${match[1]}(${match[2].substring(0, 30)}…)`, 'tool');
+        return;
+      }
+      // Reasoning
+      const evalMatch = msg.match(/💭\s*(.+)/);
+      if (evalMatch && evalMatch[1].length > 5) {
+        setAgentThinking('buyer', true);
+        setAgentStatus('buyer', 'active', evalMatch[1].substring(0, 40));
+        log(`💭 ${evalMatch[1].substring(0, 80)}`, 'buyer');
+        return;
+      }
+      // Added to cart
+      if (msg.includes('🛍️ Added')) {
+        const name = msg.split('Added ')[1]?.split(' to cart')[0];
+        const p = products.find(p => p.title === name);
+        if (name) {
+          cart.push({ name, price: p?.price_inr || 0, image: p?.image_url || '', category: p?.category || 'home' });
+          totalDonated++;
+          updateImpactCounter();
+          updateCart();
+          markProduct(name, 'added');
+          showToast(`♥ ${name} donated to someone in need`);
+          log(`Added: ${name}`, 'buyer');
+        }
+        return;
+      }
+      // Skipped
+      if (msg.includes('❌ Skipping')) {
+        const name = msg.split('Skipping ')[1];
+        if (name) { markProduct(name, 'skipped'); log(`Skipped: ${name}`, 'buyer'); }
+        return;
+      }
+      // Checkout
+      if (msg.includes('Checking out')) {
+        setAgentThinking('buyer', false);
+        setAgentThinking('merchant', true);
+        setAgentStatus('merchant', 'active', 'Processing order…');
+        return;
+      }
+      if (msg.includes('Session created')) {
+        setAgentThinking('merchant', false);
+        return;
+      }
+      if (msg.includes('🤖 Auto-paying')) {
+        log('Auto-paying (demo mode)', 'system');
+        return;
+      }
+      if (msg.includes('✅ Payment completed')) {
+        setAgentStatus('buyer', 'idle', 'Done');
+        setAgentStatus('merchant', 'idle', 'Done');
+        showToast(`🎉 You donated ${cart.length} item${cart.length !== 1 ? 's' : ''} to people in need!`);
+        // Clear cart after successful payment
+        cart = [];
+        updateCart();
+        openCart();
+        return;
+      }
+      if (msg.includes('🏁 Complete')) {
+        setAgentThinking('buyer', false);
+        setAgentStatus('buyer', 'idle', msg);
+        return;
+      }
+    }
+
+    function resetDemo() {
+      running = false; products = []; cart = [];
+      totalDonated = 12341;
+      updateImpactCounter();
+      document.getElementById('content').innerHTML = `
+        <div class="empty-state"><div class="icon">🤖</div><div class="title">Ready to shop with purpose</div><div class="desc">Configure your buyer in the sidebar and click Start.<br>The buyer shops, the merchant negotiates, and every purchase donates.</div></div>`;
+      document.getElementById('log').innerHTML = '<div class="log-entry system"><span class="time">--:--:--</span>Ready</div>';
+      updateCart();
+      setAgentStatus('buyer', 'idle', 'Idle');
+      setAgentStatus('merchant', 'idle', 'Idle');
+      document.getElementById('startBtn').disabled = false;
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   </script>
 </body>
 </html>

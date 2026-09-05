@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-CATEGORIES: tuple[str, ...] = ("apparel", "electronics")
+CATEGORIES: tuple[str, ...] = ("apparel", "home", "kitchen", "personal_care", "stationery")
 
 BASE_COMPLETION_LOW = 0.75
 BASE_COMPLETION_HIGH = 0.92
@@ -12,7 +12,13 @@ AVG_BASE_COMPLETION_PROB = (BASE_COMPLETION_LOW + BASE_COMPLETION_HIGH) / 2
 DISCOUNT_LIFT_COEF = 0.35
 DISCOUNT_NORM_CEILING_PERCENT = 60.0
 
-CATEGORY_PRICE_SENSITIVITY = {"apparel": 1.4, "electronics": 0.5}
+CATEGORY_PRICE_SENSITIVITY = {
+    "apparel": 1.4,
+    "home": 0.8,
+    "kitchen": 0.7,
+    "personal_care": 1.1,
+    "stationery": 0.6,
+}
 
 BUNDLE_RELEVANT_TAKE_RATE = 0.32
 BUNDLE_IRRELEVANT_TAKE_RATE = 0.04

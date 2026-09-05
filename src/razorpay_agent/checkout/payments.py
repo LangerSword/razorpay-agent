@@ -49,10 +49,11 @@ class PaymentProvider:
 class ScriptedPaymentProvider(PaymentProvider):
     name = "scripted"
 
-    def __init__(self, scripted: dict[str, PaymentOutcome] | None = None) -> None:
+    def __init__(self, scripted: dict[str, PaymentOutcome] | None = None, fail_link_creation: bool = False) -> None:
         self._scripted = scripted or {}
         self.calls: list[tuple[int, str, str]] = []
         self._links: dict[str, dict] = {}
+        self._fail_link_creation = fail_link_creation
 
     def charge(self, amount_paise: int, currency: str, token: str) -> ChargeResult:
         self.calls.append((amount_paise, currency, token))
@@ -65,6 +66,8 @@ class ScriptedPaymentProvider(PaymentProvider):
     def create_payment_link(
         self, amount_paise: int, currency: str, description: str, reference: str
     ) -> dict:
+        if self._fail_link_creation:
+            raise RuntimeError("Payment link creation failed: simulated gateway timeout")
         link_id = f"scripted_link_{len(self._links) + 1}"
         record = {
             "id": link_id,
@@ -81,11 +84,16 @@ class ScriptedPaymentProvider(PaymentProvider):
 class RazorpayTestProvider(PaymentProvider):
     DEMO_DECLINE_TOKENS = ("tok_declined", "tok_bad")
     DEMO_EXPIRED_TOKENS = ("tok_expired",)
+    DEFAULT_TIMEOUT = 20.0
 
-    def __init__(self, key_id: str, key_secret: str, client=None) -> None:
+    def __init__(
+        self, key_id: str, key_secret: str, client=None, timeout: float = DEFAULT_TIMEOUT
+    ) -> None:
         import razorpay
 
         self.name = "razorpay"
+        self._timeout = timeout
+        self._key_id = key_id
         self._client = client if client is not None else razorpay.Client(auth=(key_id, key_secret))
 
     def charge(self, amount_paise: int, currency: str, token: str) -> ChargeResult:
@@ -93,20 +101,28 @@ class RazorpayTestProvider(PaymentProvider):
             return ChargeResult(PaymentOutcome.DECLINED, f"demo_declined_{token}")
         if token in self.DEMO_EXPIRED_TOKENS:
             return ChargeResult(PaymentOutcome.EXPIRED_TOKEN, f"demo_expired_{token}")
-        # Settlement note (intentional, per architecture.md §4.3): in test mode an
-        # order is created here, but the real capture happens when the buyer pays
-        # through the hosted Payment Link (see create_payment_link). The merchant
-        # Orders API entry therefore remains `created` until a Standard Checkout
-        # integration binds capture to this same order id. We do NOT fabricate a
-        # capture event — doing so would misrepresent settlement.
-        order = self._client.order.create(
-            {
-                "amount": amount_paise,
-                "currency": currency.upper(),
-                "payment_capture": 1,
-                "receipt": token[:40],
-            }
-        )
+        # Standard Checkout: create an order (no payment link needed)
+        import concurrent.futures
+
+        def _create_order() -> dict:
+            return self._client.order.create(
+                {
+                    "amount": amount_paise,
+                    "currency": currency.upper(),
+                    "payment_capture": 1,
+                    "receipt": token[:40],
+                }
+            )
+
+        try:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(_create_order)
+                order = future.result(timeout=self._timeout)
+        except Exception:
+            return ChargeResult(
+                PaymentOutcome.DECLINED,
+                f"razorpay_error_{token}",
+            )
         return ChargeResult(PaymentOutcome.SUCCESS, order["id"])
 
     def order_status(self, provider_reference: str) -> OrderStatusReport:
@@ -121,17 +137,37 @@ class RazorpayTestProvider(PaymentProvider):
     def create_payment_link(
         self, amount_paise: int, currency: str, description: str, reference: str
     ) -> dict:
-        link = self._client.payment_link.create(
+        """Create a Standard Checkout URL (hosted payment page).
+        
+        Uses Razorpay's Standard Checkout instead of Payment Links to avoid
+        the 30-link test mode limit. The hosted page handles UPI/card/netbanking
+        and fires webhooks on payment completion.
+        """
+        order = self._client.order.create(
             {
                 "amount": amount_paise,
                 "currency": currency.upper(),
-                "accept_partial": False,
-                "reference_id": reference[:40],
-                "description": description[:200],
+                "payment_capture": 1,
+                "receipt": reference[:40],
             }
         )
-        return {"id": link["id"], "url": link["short_url"], "status": link["status"]}
+        checkout_url = f"https://checkout.razorpay.com/v1/payment/{order['id']}?key_id={self._key_id}"
+        return {
+            "id": order["id"],
+            "url": checkout_url,
+            "status": "created",
+            "order_id": order["id"],
+        }
 
     def payment_link_status(self, link_id: str) -> dict:
-        link = self._client.payment_link.fetch(link_id)
-        return {"id": link["id"], "url": link.get("short_url"), "status": link["status"]}
+        """Check order status by ID (Standard Checkout uses orders, not links)."""
+        try:
+            order = self._client.order.fetch(link_id)
+            return {
+                "id": order["id"],
+                "url": f"https://checkout.razorpay.com/v1/payment/{order['id']}?key_id={self._key_id}",
+                "status": order["status"],
+                "amount_paid": order.get("amount_paid", 0),
+            }
+        except Exception:
+            return {"id": link_id, "status": "unknown"}

@@ -1,43 +1,66 @@
 {
-  "generated_at": "2026-08-31T19:36:18.121316+00:00",
+  "generated_at": "2026-09-03T03:12:56.671520+00:00",
   "model": "nous",
   "provider": "nous",
-  "scenario_count": 2,
-  "selected_count": 2,
-  "min_score": 0.5,
+  "merchant_scenario_count": 5,
+  "buyer_scenario_count": 4,
+  "merchant_selected_count": 4,
+  "buyer_selected_count": 4,
+  "total_examples": 8,
+  "min_score": 0.7,
   "examples": [
     {
-      "scenario": "pretrain-normal_discount",
+      "scenario": "pretrain-merchant-normal_discount",
       "turns": [
         {
           "role": "assistant",
-          "content": "<<tool:get_catalog_item {\"sku\": \"sku-hoodie\"}>>\n<<tool:get_clearance_policy>>"
+          "content": "<tool_call>get_clearance_policy {}"
         },
         {
           "role": "user",
-          "content": "TOOL_RESULT: get_catalog_item({\"sku\": \"sku-hoodie\"}) -> {\"id\": \"sku-hoodie\", \"title\": \"Zip-Up Hoodie\", \"category\": \"apparel\", \"unit_amount_paise\": 249900, \"stagnant\": false, \"days_in_stock\": null}"
+          "content": "TOOL_RESULT: get_clearance_policy({}) -> {\"max_discount_percent\": 15.0, \"max_discount_rupee_cap\": 300.0, \"clearance_max_discount_percent\": 40.0, \"clearance_max_discount_rupee_cap\": 1000000.0, \"max_bundle_cart_share\": 0.2}"
         },
         {
           "role": "assistant",
-          "content": "<<tool:get_bandit_scores {\"target_sku\": \"sku-hoodie\", \"item_category\": \"apparel\", \"cart_value_inr\": 2499, \"buyer_allowance_inr\": 100000, \"is_stagnant\": false, \"days_in_stock\": null}>>"
-        },
-        {
-          "role": "user",
-          "content": "TOOL_RESULT: get_bandit_scores({\"buyer_allowance_inr\": 100000, \"cart_value_inr\": 2499, \"days_in_stock\": null, \"is_stagnant\": false, \"item_category\": \"apparel\", \"target_sku\": \"sku-hoodie\"}) -> {\"d5\": 20.059447708061438, \"d10\": 20.059447708061438, \"d15\": 20.059447708061438, \"d20\": 20.059447708061438, \"d25\": 20.059447708061438, \"d35\": 20.059447708061438, \"d40\": 20.059447708061438, \"b_sku-socks\": 20.059447708061438, \"b_sku-charger\": 20.059447708061438}"
-        },
-        {
-          "role": "assistant",
-          "content": "The proposed 10% discount on the Zip-Up Hoodie (INR 2499) is sensible: it\u2019s a moderate discount that can encourage purchase while limiting revenue loss. It is bounded because the gate decision returned `allowed=true`, indicating compliance with the merchant\u2019s clearance policy limits (maximum percentage and rupee cap). The bandit scores are equal across all discount arms, so the algorithm has no strong preference for a different discount level; 10% is therefore a reasonable choice. The item is not stagnant, so this is a normal promotional discount rather than a clearance action. Overall, the offer is consistent with policy and well\u2011justified."
+          "content": "The offer proposes a **10% discount** on sku-hoodie.\n\n- **Policy limits**: max_discount_percent = 15%, max_discount_rupee_cap = 300 INR.\n- **This offer**: 10% (within % cap) and ~250 INR (within 300 INR cap). Fully bounded.\n- **Headroom**: buyer allowance of 100,000 INR is far above cart value of 2,499 INR; no constraint.\n- **Context**: not a stagnant clearance session; standard non-clearance limits apply.\n\nVerdict: APPROVE"
         }
       ],
-      "final_text": "The proposed 10% discount on the Zip-Up Hoodie (INR 2499) is sensible: it\u2019s a moderate discount that can encourage purchase while limiting revenue loss. It is bounded because the gate decision returned `allowed=true`, indicating compliance with the merchant\u2019s clearance policy limits (maximum percentage and rupee cap). The bandit scores are equal across all discount arms, so the algorithm has no strong preference for a different discount level; 10% is therefore a reasonable choice. The item is not stagnant, so this is a normal promotional discount rather than a clearance action. Overall, the offer is consistent with policy and well\u2011justified."
+      "final_text": "The offer proposes a **10% discount** on sku-hoodie.\n\n- **Policy limits**: max_discount_percent = 15%, max_discount_rupee_cap = 300 INR.\n- **This offer**: 10% (within % cap) and ~250 INR (within 300 INR cap). Fully bounded.\n- **Headroom**: buyer allowance of 100,000 INR is far above cart value of 2,499 INR; no constraint.\n- **Context**: not a stagnant clearance session; standard non-clearance limits apply.\n\nVerdict: APPROVE",
+      "agent": "merchant"
     },
     {
-      "scenario": "pretrain-normal_bundle",
+      "scenario": "pretrain-merchant-rejected_allowance",
       "turns": [
         {
           "role": "assistant",
-          "content": "<<tool:get_catalog_item {\"sku\": \"sku-hoodie\"}>>\n<<tool:get_bandit_scores {\"target_sku\": \"sku-hoodie\", \"item_category\": \"apparel\", \"cart_value_inr\": 2499, \"buyer_allowance_inr\": 100000, \"is_stagnant\": false}>>"
+          "content": "I need to check the clearance policy and bandit scores to assess this offer. Let me gather the relevant information.\n\n<<tool:get_clearance_policy {}>>\n<<tool:get_bandit_scores {\"target_sku\": \"sku-headphones\", \"item_category\": \"electronics\", \"cart_value_inr\": 4999.0, \"buyer_allowance_inr\": 1000.0, \"is_stagnant\": false, \"days_in_stock\": null}>>"
+        },
+        {
+          "role": "user",
+          "content": "TOOL_RESULT: get_clearance_policy({}) -> {\"max_discount_percent\": 15.0, \"max_discount_rupee_cap\": 300.0, \"clearance_max_discount_percent\": 40.0, \"clearance_max_discount_rupee_cap\": 1000000.0, \"max_bundle_cart_share\": 0.2}"
+        },
+        {
+          "role": "assistant",
+          "content": "Let me analyze this offer against the policy limits.<tool_call>get_bandit_scores<arg_key>target_sku</arg_key><arg_value>sku-headphones</arg_value><arg_key>item_category</arg_key><arg_value>electronics</arg_value><arg_key>cart_value_inr</arg_key><arg_value>4999.0</arg_value><arg_key>buyer_allowance_inr</arg_key><arg_value>1000.0</arg_value><arg_key>is_stagnant</arg_key><arg_value>false</arg_value><arg_key>days_in_stock</arg_key><arg_value>null</arg_value></tool_call>"
+        }
+      ],
+      "final_text": "Let me analyze this offer against the policy limits.<tool_call>get_bandit_scores<arg_key>target_sku</arg_key><arg_value>sku-headphones</arg_value><arg_key>item_category</arg_key><arg_value>electronics</arg_value><arg_key>cart_value_inr</arg_key><arg_value>4999.0</arg_value><arg_key>buyer_allowance_inr</arg_key><arg_value>1000.0</arg_value><arg_key>is_stagnant</arg_key><arg_value>false</arg_value><arg_key>days_in_stock</arg_key><arg_value>null</arg_value></tool_call>",
+      "agent": "merchant"
+    },
+    {
+      "scenario": "pretrain-merchant-normal_bundle",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "<<tool:get_catalog_item {\"sku\": \"sku-socks\"}>>\n<<tool:get_clearance_policy {}>>"
+        },
+        {
+          "role": "user",
+          "content": "TOOL_RESULT: get_catalog_item({\"sku\": \"sku-socks\"}) -> {\"id\": \"sku-socks\", \"title\": \"Merino Wool Socks\", \"category\": \"apparel\", \"unit_amount_paise\": 49900, \"stagnant\": false, \"days_in_stock\": null}"
+        },
+        {
+          "role": "assistant",
+          "content": "<<tool:get_catalog_item {\"sku\": \"sku-hoodie\"}>>\n<<tool:get_clearance_policy {}>>"
         },
         {
           "role": "user",
@@ -45,10 +68,82 @@
         },
         {
           "role": "assistant",
-          "content": "The proposed offer adds **sku-socks** at **INR\u202f499** to the existing **sku-hoodie** (INR\u202f2\u202f499), bringing the new cart total to **INR\u202f2\u202f998**.  \n\n- **Bounded?** Yes. The total (INR\u202f2\u202f998) is far below the buyer\u2019s allowance (INR\u202f100\u202f000).  \n- **Consistent with policy?** The gate decision returned **allowed: true**, meaning the bundle price and any implied discount comply with the merchant\u2019s clearance limits and pricing rules.  \n- **Sensible?** The LinUCB bandit selected this bundle, and the gate approved it, indicating the algorithm expects a positive completion probability and/or net revenue uplift. Without the socks\u2019 regular price we cannot quantify the exact discount, but the gate\u2019s approval implies the discount is within allowed bounds.  \n\n**Recommendation:** The offer is acceptable\u2014it is bounded, policy\u2011compliant, and algorithmically supported. No red flags require blocking."
+          "content": "- Clearance caps: 15% max discount / 300 INR ceiling per the gate config (from prior policy read).\n- Offer: bundle_upsell of sku-socks (499 INR) alongside sku-hoodie (2499 INR). Both items are regular-price apparel; no markdown/discount is being applied, so the clearance discount limits (15%/300 INR) are not infringed.\n- Cart/buyer headroom: cart is 2499 INR, buyer allowance 100000 INR \u2192 ample headroom; the 499 INR bundle add-on is modest and within allowance.\n- Reasonableness: a low-value apparel complement (socks with a hoodie) as a bundle upsell is a standard, sensible cross-sell with no policy red flags.\n\nVerdict: APPROVE"
         }
       ],
-      "final_text": "The proposed offer adds **sku-socks** at **INR\u202f499** to the existing **sku-hoodie** (INR\u202f2\u202f499), bringing the new cart total to **INR\u202f2\u202f998**.  \n\n- **Bounded?** Yes. The total (INR\u202f2\u202f998) is far below the buyer\u2019s allowance (INR\u202f100\u202f000).  \n- **Consistent with policy?** The gate decision returned **allowed: true**, meaning the bundle price and any implied discount comply with the merchant\u2019s clearance limits and pricing rules.  \n- **Sensible?** The LinUCB bandit selected this bundle, and the gate approved it, indicating the algorithm expects a positive completion probability and/or net revenue uplift. Without the socks\u2019 regular price we cannot quantify the exact discount, but the gate\u2019s approval implies the discount is within allowed bounds.  \n\n**Recommendation:** The offer is acceptable\u2014it is bounded, policy\u2011compliant, and algorithmically supported. No red flags require blocking."
+      "final_text": "- Clearance caps: 15% max discount / 300 INR ceiling per the gate config (from prior policy read).\n- Offer: bundle_upsell of sku-socks (499 INR) alongside sku-hoodie (2499 INR). Both items are regular-price apparel; no markdown/discount is being applied, so the clearance discount limits (15%/300 INR) are not infringed.\n- Cart/buyer headroom: cart is 2499 INR, buyer allowance 100000 INR \u2192 ample headroom; the 499 INR bundle add-on is modest and within allowance.\n- Reasonableness: a low-value apparel complement (socks with a hoodie) as a bundle upsell is a standard, sensible cross-sell with no policy red flags.\n\nVerdict: APPROVE",
+      "agent": "merchant"
+    },
+    {
+      "scenario": "pretrain-merchant-gate_capped_discount",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "<tool_call>get_clearance_policy {}\n<<tool:get_catalog_item {\"sku\": \"sku-hoodie\"}>>"
+        },
+        {
+          "role": "user",
+          "content": "TOOL_RESULT: get_catalog_item({\"sku\": \"sku-hoodie\"}) -> {\"id\": \"sku-hoodie\", \"title\": \"Zip-Up Hoodie\", \"category\": \"apparel\", \"unit_amount_paise\": 249900, \"stagnant\": false, \"days_in_stock\": null}"
+        },
+        {
+          "role": "assistant",
+          "content": "<tool_call>get_clearance_policy {}"
+        },
+        {
+          "role": "user",
+          "content": "TOOL_RESULT: get_clearance_policy({}) -> {\"max_discount_percent\": 15.0, \"max_discount_rupee_cap\": 300.0, \"clearance_max_discount_percent\": 40.0, \"clearance_max_discount_rupee_cap\": 1000000.0, \"max_bundle_cart_share\": 0.2}"
+        },
+        {
+          "role": "assistant",
+          "content": "The clearance policy sets a **15% discount cap** (max_discount_percent: 15.0) and a **300 rupee ceiling** (max_discount_rupee_cap: 300.0) for non-clearance scenarios. This offer proposes a 25% discount, which exceeds the 15% cap, and equates to approximately INR 625 off on the INR 2,499 hoodie\u2014well above the 300 rupee ceiling.\n\nThere is significant buyer-allowance headroom (INR 100,000 available), but that does not override the discount cap limits. Since the gate allows the action but the bandit's proposal violates the stated policy limits, this is a conflict between bandit intent and policy constraints.\n\nThe offer exceeds the maximum allowed discount percentage and the rupee cap. It is not policy-compliant despite having sufficient headroom in other areas.\n\nVerdict: REJECT"
+        }
+      ],
+      "final_text": "The clearance policy sets a **15% discount cap** (max_discount_percent: 15.0) and a **300 rupee ceiling** (max_discount_rupee_cap: 300.0) for non-clearance scenarios. This offer proposes a 25% discount, which exceeds the 15% cap, and equates to approximately INR 625 off on the INR 2,499 hoodie\u2014well above the 300 rupee ceiling.\n\nThere is significant buyer-allowance headroom (INR 100,000 available), but that does not override the discount cap limits. Since the gate allows the action but the bandit's proposal violates the stated policy limits, this is a conflict between bandit intent and policy constraints.\n\nThe offer exceeds the maximum allowed discount percentage and the rupee cap. It is not policy-compliant despite having sufficient headroom in other areas.\n\nVerdict: REJECT",
+      "agent": "merchant"
+    },
+    {
+      "scenario": "good_discount",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "The offer provides a 12.0% discount, which exceeds the minimum worthwhile discount of 5.0%. There are no add-ons involved, so the add-on share constraint is not a concern. Therefore, the offer is beneficial and should be accepted.\n\nVerdict: ACCEPT"
+        }
+      ],
+      "final_text": "The offer provides a 12.0% discount, which exceeds the minimum worthwhile discount of 5.0%. There are no add-ons involved, so the add-on share constraint is not a concern. Therefore, the offer is beneficial and should be accepted.\n\nVerdict: ACCEPT",
+      "agent": "buyer"
+    },
+    {
+      "scenario": "stingy_discount",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "The merchant's offer provides a 5.0% discount on the sku-hoodie, which exactly matches my minimum worthwhile discount threshold. Since the offer meets my requirement and there are no add-ons involved that would exceed the acceptable cart share, accepting it is the optimal decision to maximize value.\n\nVerdict: ACCEPT"
+        }
+      ],
+      "final_text": "The merchant's offer provides a 5.0% discount on the sku-hoodie, which exactly matches my minimum worthwhile discount threshold. Since the offer meets my requirement and there are no add-ons involved that would exceed the acceptable cart share, accepting it is the optimal decision to maximize value.\n\nVerdict: ACCEPT",
+      "agent": "buyer"
+    },
+    {
+      "scenario": "bundle_upsell_relevant",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "The offer adds INR 499 for socks, which is 20% of the original INR 2000 cart value \u2014 under the 25% add-on threshold. The bundled total of INR 2499 doesn't provide a direct discount on the hoodie itself. Since the add-on fits within the max share limit and meets the inclusion criteria, it's reasonable to accept.\n\nVerdict: ACCEPT"
+        }
+      ],
+      "final_text": "The offer adds INR 499 for socks, which is 20% of the original INR 2000 cart value \u2014 under the 25% add-on threshold. The bundled total of INR 2499 doesn't provide a direct discount on the hoodie itself. Since the add-on fits within the max share limit and meets the inclusion criteria, it's reasonable to accept.\n\nVerdict: ACCEPT",
+      "agent": "buyer"
+    },
+    {
+      "scenario": "no_offer",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "The merchant has not provided any offer or discount, meaning the item is priced at the full cart value of INR 2499.00. Since there is no discount (which is below the minimum worthwhile threshold of 5.0%), there is no incentive to accept the offer. I will reject it and proceed with the base purchase at full price.\n\nVerdict: DECLINE"
+        }
+      ],
+      "final_text": "The merchant has not provided any offer or discount, meaning the item is priced at the full cart value of INR 2499.00. Since there is no discount (which is below the minimum worthwhile threshold of 5.0%), there is no incentive to accept the offer. I will reject it and proceed with the base purchase at full price.\n\nVerdict: DECLINE",
+      "agent": "buyer"
     }
   ]
 }

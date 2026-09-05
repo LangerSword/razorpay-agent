@@ -80,9 +80,9 @@ class TestSimulatorHonorsPrior:
             regimen_graph=g,
         )
         assert same_cat.bundle_category_match is True
-        # electronics bundle offered to an apparel session -> not relevant
+        # home bundle offered to an apparel session -> not relevant
         diff_cat = sim_offer_for_arm(
-            EvalArm("b_charger", "bundle", bundle_item="sku-charger", bundle_price_rupees=1499.0),
+            EvalArm("b_mug", "bundle", bundle_item="sku-mug", bundle_price_rupees=599.0),
             _session("apparel"),
             regimen_graph=g,
         )

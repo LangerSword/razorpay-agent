@@ -12,7 +12,7 @@ def _arms():
         DiscountArm("d15", 15.0),
         DiscountArm("d20", 20.0),
         BundleArm("b_sku-socks", "sku-socks", 499.0),
-        BundleArm("b_sku-charger", "sku-charger", 1499.0),
+        BundleArm("b_sku-mug", "sku-mug", 599.0),
     )
 
 
@@ -25,7 +25,7 @@ class TestBuildPolicy:
     def test_existing_file_starts_warm(self, tmp_path, capsys):
         from razorpay_agent.decision import ContextEncoder
 
-        LinUCBPolicy(_arms(), ContextEncoder(("apparel", "electronics")), alpha=0.5).save(
+        LinUCBPolicy(_arms(), ContextEncoder(("apparel", "home", "kitchen", "personal_care", "stationery")), alpha=0.5).save(
             tmp_path / "bandit.json"
         )
         policy, is_warm = server_module.build_policy(tmp_path / "bandit.json")
@@ -52,7 +52,7 @@ class TestWarmAppAssembly:
         monkeypatch.delenv("RAZORPAY_KEY_ID", raising=False)
         monkeypatch.delenv("RAZORPAY_KEY_SECRET", raising=False)
         pretrained = tmp_path / "bandit.json"
-        LinUCBPolicy(_arms(), ContextEncoder(("apparel", "electronics")), alpha=0.5).save(pretrained)
+        LinUCBPolicy(_arms(), ContextEncoder(("apparel", "home", "kitchen", "personal_care", "stationery")), alpha=0.5).save(pretrained)
 
         _, _, is_live = server_module.build_live_app(
             tmp_path / "live.sqlite3", pretrained_bandit_path=pretrained

@@ -46,6 +46,28 @@ CREATE TABLE IF NOT EXISTS decision_log (
     reward REAL
 );
 CREATE INDEX IF NOT EXISTS idx_decision_log_id ON decision_log(id);
+CREATE TABLE IF NOT EXISTS buyer_accuracy_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    total INTEGER NOT NULL,
+    correct INTEGER NOT NULL,
+    accuracy REAL NOT NULL,
+    discount_accuracy REAL NOT NULL,
+    bundle_accuracy REAL NOT NULL,
+    failures_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS merchant_reasoning_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    total INTEGER NOT NULL,
+    correct INTEGER NOT NULL,
+    accuracy REAL NOT NULL,
+    arm_identification_rate REAL NOT NULL,
+    gate_awareness_rate REAL NOT NULL,
+    limits_accuracy_rate REAL NOT NULL,
+    verdict_accuracy_rate REAL NOT NULL,
+    failures_json TEXT NOT NULL
+);
 """
 
 
@@ -195,6 +217,71 @@ class EvalStore:
             ).fetchone()
         return int(value)
 
-    @staticmethod
-    def _dumps(value) -> str:
-        return json.dumps(value)
+    def record_buyer_accuracy_run(
+        self,
+        summary: "BuyerAccuracySummary",
+    ) -> int:
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                """
+                INSERT INTO buyer_accuracy_runs
+                    (created_at, total, correct, accuracy,
+                     discount_accuracy, bundle_accuracy, failures_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    datetime.now(UTC).isoformat(),
+                    summary.total,
+                    summary.correct,
+                    summary.accuracy,
+                    summary.by_offer_type.get("discount", {}).get("accuracy", 0.0),
+                    summary.by_offer_type.get("bundle", {}).get("accuracy", 0.0),
+                    json.dumps([g.detail for g in summary.failures]),
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def latest_buyer_accuracy(self) -> dict | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM buyer_accuracy_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def record_merchant_reasoning_run(
+        self,
+        summary: "MerchantReasoningSummary",
+    ) -> int:
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                """
+                INSERT INTO merchant_reasoning_runs
+                    (created_at, total, correct, accuracy,
+                     arm_identification_rate, gate_awareness_rate,
+                     limits_accuracy_rate, verdict_accuracy_rate, failures_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    datetime.now(UTC).isoformat(),
+                    summary.total,
+                    summary.correct,
+                    summary.accuracy,
+                    summary.arm_identification_rate,
+                    summary.gate_awareness_rate,
+                    summary.limits_accuracy_rate,
+                    summary.verdict_accuracy_rate,
+                    json.dumps([g.detail for g in summary.failures]),
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def latest_merchant_reasoning(self) -> dict | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM merchant_reasoning_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)

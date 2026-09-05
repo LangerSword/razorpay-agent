@@ -9,7 +9,11 @@ def latest_report(eval_store: EvalStore) -> dict | None:
 
     bandit_steps = [s for s in summary["steps"] if s["policy"] == "bandit"]
     fallback_steps = [s for s in summary["steps"] if s["policy"] == "fallback"]
-    return {
+
+    buyer_accuracy = eval_store.latest_buyer_accuracy()
+    merchant_reasoning = eval_store.latest_merchant_reasoning()
+
+    report = {
         "run_id": summary["id"],
         "created_at": summary["created_at"],
         "seed": summary["seed"],
@@ -25,6 +29,14 @@ def latest_report(eval_store: EvalStore) -> dict | None:
         },
         "honesty_note": HONESTY_NOTE,
     }
+
+    if buyer_accuracy:
+        report["buyer_accuracy"] = buyer_accuracy
+
+    if merchant_reasoning:
+        report["merchant_reasoning"] = merchant_reasoning
+
+    return report
 
 
 def _mean(values: list[float]) -> float:

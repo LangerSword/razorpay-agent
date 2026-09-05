@@ -37,7 +37,7 @@ WARMUP_PER_ARM = 250
 
 BUNDLE_ITEM_CATEGORIES: dict[str, tuple[str, float]] = {
     "sku-socks": ("apparel", 499.0),
-    "sku-charger": ("electronics", 1499.0),
+    "sku-mug": ("home", 599.0),
 }
 
 FALLBACK_ITEM = "sku-socks"

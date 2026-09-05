@@ -44,6 +44,8 @@ class CheckoutSessionState:
     order: dict | None = None
     is_stagnant: bool = False
     days_in_stock: int | None = None
+    reasoning_trace: dict | None = None
+    buyer_transcript: dict | None = None  # buyer agent transcript + verdict
 
 
 class SessionRepository:

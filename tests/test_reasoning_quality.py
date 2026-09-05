@@ -78,8 +78,8 @@ def test_few_shot_formatting_round_trip():
         {
             "scenario": "normal_discount",
             "turns": [
-                {"role": "assistant", "content": "<<tool:get_catalog_item {\"sku\": \"sku-hoodie\"}>>"},
-                {"role": "user", "content": "TOOL_RESULT: {\"title\": \"Zip-Up Hoodie\"}"},
+                {"role": "assistant", "content": '<<tool:get_catalog_item {"sku": "sku-hoodie"}>>'},
+                {"role": "user", "content": 'TOOL_RESULT: {"title": "Zip-Up Hoodie"}'},
                 {"role": "assistant", "content": "The offer is sensible."},
             ],
             "final_text": "The offer is sensible.",
@@ -120,3 +120,24 @@ def test_reasoning_trace_efficiency():
     )
     tool_calls = [s for s in (result.steps or []) if "<<tool:" in (s.content or "")]
     assert len(tool_calls) <= 6, f"too many tool calls: {len(tool_calls)}"
+
+
+def test_merchant_verdict_is_strict():
+    """Verify merchant reasoner produces a strict verdict line."""
+    from razorpay_agent.reasoning.llm import StubBackend
+    agent = _agent()
+    # Force stub to get deterministic behavior
+    agent._llm = StubBackend()
+    result = agent.reason(
+        "strict-test",
+        target_sku="sku-hoodie",
+        item_category="apparel",
+        cart_value_inr=2499.0,
+        buyer_allowance_inr=100000.0,
+        bandit_action={"action_type": "discount", "discount_percent": 10},
+        gate_decision={"allowed": True},
+    )
+    # Should have a clear verdict
+    assert result.verdict in ("APPROVE", "REJECT", "REVIEW")
+    # Final text should contain the verdict line
+    assert "Verdict:" in result.final_text

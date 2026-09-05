@@ -77,7 +77,7 @@ class TestEndToEndPurchase:
         assert result.final_status == "completed"
         assert result.order is not None
         assert result.order["checkout_session_id"] == agent.last_session["id"]
-        assert "discovered 6 products" in result.transcript[0]
+        assert "discovered 15 products" in result.transcript[0]
         run(agent.aclose())
 
     def test_buyer_accepts_a_worthwhile_discount(self):
@@ -99,8 +99,9 @@ class TestEndToEndPurchase:
         run(agent.aclose())
 
     def test_abstaining_bandit_falls_back_to_safe_default_offer(self):
+        from razorpay_agent.reasoning.llm import StubBackend
         app, audit = build_stack(policy=None)
-        agent = make_buyer(app)
+        agent = make_buyer(app, llm=StubBackend())
         result = run(agent.run_purchase("sku-hoodie"))
         assert result.final_status == "completed"
         assert result.accepted_offer is True
@@ -149,3 +150,81 @@ class TestCancel:
         canceled = run(agent.cancel_session(session["id"]))
         assert canceled["status"] == "canceled"
         run(agent.aclose())
+
+
+class TestBuyerReasoning:
+    def test_buyer_reasoning_gives_clear_verdict(self):
+        """Verify buyer reasoner produces a clear ACCEPT/DECLINE verdict."""
+        from razorpay_agent.reasoning.llm import StubBackend
+        from razorpay_agent.buyer.reasoning_agent import evaluate_offer, PurchaseMemory
+
+        # Session with a good discount (12% off sku-hoodie)
+        session = {
+            "target_sku": "sku-hoodie",
+            "suggested_add_on": None,
+            "line_items": [
+                {
+                    "item": {"id": "sku-hoodie", "quantity": 1},
+                    "base_amount": 249900,
+                    "discount": 29988,
+                    "total": 219912,
+                }
+            ],
+            "totals": [
+                {"type": "items_base_amount", "amount": 249900},
+                {"type": "items_discount", "amount": -29988},
+                {"type": "subtotal", "amount": 219912},
+                {"type": "total", "amount": 219912},
+            ],
+        }
+        llm = StubBackend()
+        verdict = evaluate_offer(
+            llm=llm,
+            session=session,
+            cart_value_inr=2199.12,
+            buyer_allowance_inr=100000.0,
+            memory=PurchaseMemory(),
+            min_discount_percent=5.0,
+            max_add_on_share=0.25,
+        )
+        # Stub should accept a 12% discount
+        assert verdict.verdict == "accept"
+        assert "Verdict: ACCEPT" in verdict.rationale
+
+    def test_buyer_reasoning_declines_stingy_offer(self):
+        """Verify buyer reasoner declines a below-threshold discount."""
+        from razorpay_agent.reasoning.llm import StubBackend
+        from razorpay_agent.buyer.reasoning_agent import evaluate_offer, PurchaseMemory
+
+        # Session with a 3% discount (below 5% minimum)
+        session = {
+            "target_sku": "sku-hoodie",
+            "suggested_add_on": None,
+            "line_items": [
+                {
+                    "item": {"id": "sku-hoodie", "quantity": 1},
+                    "base_amount": 249900,
+                    "discount": 7497,
+                    "total": 242403,
+                }
+            ],
+            "totals": [
+                {"type": "items_base_amount", "amount": 249900},
+                {"type": "items_discount", "amount": -7497},
+                {"type": "subtotal", "amount": 242403},
+                {"type": "total", "amount": 242403},
+            ],
+        }
+        llm = StubBackend()
+        verdict = evaluate_offer(
+            llm=llm,
+            session=session,
+            cart_value_inr=2424.03,
+            buyer_allowance_inr=100000.0,
+            memory=PurchaseMemory(),
+            min_discount_percent=5.0,
+            max_add_on_share=0.25,
+        )
+        # Stub should decline 3% (below threshold)
+        assert verdict.verdict == "decline"
+        assert "Verdict: DECLINE" in verdict.rationale

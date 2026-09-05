@@ -4,7 +4,7 @@
 **Context:** Razorpay AI Builders' Buildathon (fellowship track)
 **Deadline:** ~September 5, 2026
 **Built by:** solo developer
-**Demo merchant:** *Plain Goods Co.* is a **fictional** merchant invented for this buildathon. The catalog, regimen graph, and storefront are all invented; no real brand is depicted or implied.
+**Demo merchant:** *Common* is a **fictional** merchant invented for this buildathon. The catalog, regimen graph, and storefront are all invented; no real brand is depicted or implied.
 
 This document is the single source of truth for the architecture of razorpay-agent. It exists so that both a human and an LLM coding agent can pick it up cold and understand not just *what* to build, but *why* every structural decision was made — so that future changes stay consistent with the reasoning instead of drifting from it.
 
@@ -20,7 +20,7 @@ razorpay-agent does both (a) and (b) in one coherent system: a merchant-side dec
 
 These three principles were decided explicitly and constrain every downstream choice in this document. Any future change must be checked against them.
 
-1. **The LLM is an advisory reasoner, structurally barred from the money path.** We use an LLM in `reasoning/` to explain *why* the decision layer proposed an offer. It can never go against the rules, because the architecture does not let it: the reasoner sees context only through **read-only** tools, can only append a reasoning trace (a side table — never the core audit trail's decision fields), and never proposes or executes a settlement. Every money action still flows through the rule & policy gate (principle 2: the rule layer always wins), the immutable core contract, and the audit trail. If the model is missing, misconfigured, or fails, it degrades to a keyless `StubBackend` with zero effect on any decision. The revenue-driving "AI" (the bandit) and the eval harness remain deliberately non-LLM; the reasoning layer is the one explicitly LLM-backed part. The hard constraints are what make an LLM safe here — its output is explanation, not authority.
+1. **Two agents, one gated money path — the LLM advises, never executes.** The system is a dual-agent architecture: a **MerchantAgent** (proposes offers via a LinUCB bandit + optional Hermes-style LLM reasoner) and a **BuyerAgent** (discovers the catalog, negotiates over ACP, accepts/declines independently). Both are Hermes-style — each with its own harness, eval, and graph state — but the money path is structurally non-LLM: the LLM in `reasoning/` explains *why* an offer was proposed through **read-only** tools, writes only to a `reasoning_log` side table, and never proposes or executes settlement. Every money action flows through the rule & policy gate (principle 2: the rule layer always wins), the immutable core contract, and the audit trail. If the LLM is missing, misconfigured, or fails, it degrades to a keyless `StubBackend` with zero effect on any decision. The bandit and the eval harness remain deliberately non-LLM; the reasoning layer is the one explicitly LLM-backed component. Orchestration is via LangGraph: BuyerAgent → ACP negotiate → MerchantAgent → Gate → Razorpay settle → Audit.
 2. **Minimal dependency on any single model.** The system must remain safe and functional even if its learned model (the bandit) were replaced, disabled, or wrong. This is achieved structurally, not by trusting the model to behave — see the Core Contract below.
 3. **A small, stable core with pluggable edges.** The core is deliberately tiny (three data shapes and one rule). Everything else is a replaceable module that speaks to that core. This is what allows components to be added, removed, or swapped later without destabilizing the rest of the system.
 
@@ -98,176 +98,114 @@ The only component in the system allowed to be a learned model, and even then, i
 - **Algorithm:** LinUCB (a contextual bandit). Chosen over epsilon-greedy for smarter, confidence-weighted exploration — it converges faster, which matters because the live demo will only produce a handful of real transactions to learn from.
 - **Context (what it sees):** cart contents, item category, cart value, and the buyer-agent's stated spending allowance. Deliberately kept small and legible — more context means harder-to-explain individual decisions.
 - **Action space — discrete arms:** the bandit chooses among a small fixed menu of candidate offers: a handful of configured discount percentages plus cataloged bundle items with fixed prices. Continuous-percentage scoring was considered and rejected: regret accounting for the eval harness is only clean over finite arms, every proposal stays directly explainable ("the 10% arm"), and a fixed menu makes policy leakage structurally hard — the bandit selects among candidates rather than optimizing a value it might be tempted to clamp. Arms deliberately span offers the gate may cap down or reject; the bandit never adjusts a proposal to fit policy, it just learns from what happens to each arm. Bundle arms optionally carry an `anchor_sku` naming the cart item they are paired to (regimen-anchored bundles set it; static catalog bundles leave it unset) — see §4.9.
-- **Abstention:** if even the most optimistic arm score (expected reward plus exploration bonus) is non-positive, the bandit proposes nothing for that session — low-confidence silence is a valid decision-layer output, per §5 step 2.
-- **Context encoding:** the legible context maps to a small numeric vector — intercept, cart value scaled to thousands of rupees, allowance-to-cart ratio, one-hot item category. The SKU itself is deliberately not a feature; the category carries that signal.
-- **Pretraining and persistence:** the policy's full learned state — per-arm `A` matrices and `b` vectors, alpha, arm definitions, encoder categories, update count — serializes to plain JSON at `demo/pretrained_bandit.json`. A one-time pretraining script (`demo/pretrain_bandit.py`) runs the bandit through 5,000 synthetic episodes via the eval harness's simulator, with every proposal passing through the real gate exactly as in production. `run_server.py` warm-starts from this file whenever it exists and keeps learning from live transactions thereafter (the hybrid strategy of §4.5); if the file is missing it starts cold with a loud log line — the same no-silent-fallback principle as the payment credentials.
-- **Observed converged behavior:** after pretraining, the policy reliably prefers its best net-revenue arm (a modest discount), with near-total confidence — meaning an over-cap proposal becomes an exploration artifact rather than steady-state behavior, and the rule layer's caps bind mainly on high-value carts where even the preferred percentage exceeds the rupee ceiling. This is the intended division of labor showing up empirically: training reduces reliance on the gate; it never replaces it.
-- **Reward signal:** **net revenue gained**, not raw accept/decline — the value gained from an accepted offer minus the discount cost. A policy that accepts everything by discounting to the max would score poorly here even with a high acceptance rate. This is the §4.7 definition **for normal inventory**; the stagnant clearance objective in §4.8 is a deliberate, narrower extension of it for dead stock only.
-- **Classified as RL, but the simplest slice of it:** a contextual bandit is single-step reinforcement learning — one decision, one immediate reward, no modeling of how this action affects future states. This keeps it lightweight, interpretable, and appropriate for the "minimal model dependency" principle, as opposed to full multi-step RL.
-- **Swappability:** because this component only ever emits a `ProposedAction`, it can be replaced by any other decision-making approach (a different bandit, a rules engine, anything) without touching the rule layer, the audit trail, or the checkout surface.
 
-### 4.3 Checkout Surface — ACP-Compliant
+### 4.3 Reasoning Layer (Advisory Only)
 
-The door a buyer-agent walks through. Implements the **Agentic Commerce Protocol (ACP)**, chosen over the alternatives for the following reasons (see Section 6 for the full comparison):
+Hermes-style advisory reasoners for both agents — strictly read-only, never touches the money path:
 
-- **Product feed:** structured, machine-readable catalog data the buyer-agent can query.
-- **Checkout session lifecycle:** `create`, `update`, `get`, `complete`, `cancel` endpoints. Every response returns the full authoritative session state.
-- **Delegated payment:** the buyer-agent provides a payment credential scoped with a **maximum chargeable amount and an expiry** — not raw payment details. This scoped allowance functions as a lightweight mandate (proof of what the buyer-agent is authorized to spend) without needing to implement Google's full AP2 protocol separately — ACP's own delegated payment spec already carries this concept.
-- **Integration point with the core contract:** at session creation (and update), the decision layer is invoked, its `ProposedAction` is passed through the gate (checked against the rule layer's limits **and** the buyer-agent's allowance), and the session's returned totals reflect only what the gate allowed.
-- **Settlement:** the actual charge is executed via **Razorpay's test-mode APIs**, with Razorpay standing in as the payment provider in ACP's delegated payment flow.
-- **Demonstrated settlement scope:** against live test-mode credentials, the full flow is demonstrated end-to-end: order creation per transaction (the real `order_...` id flows into the ACP session payload and audit trail), order-status polling straight from the Orders API, and actual capture through a Razorpay Payment Link's hosted checkout (test-mode netbanking/domestic cards), with the demo printing each state exactly and only as Razorpay's APIs report it — `created`, then `paid` once genuinely paid — and stating plainly when capture has not happened. One honest structural note: capture settles via the payment link's own Razorpay order; the merchant-side Orders API entry remains `created` until a Standard Checkout integration binds capture to that same order id. No retry ever occurs on failure, per §5.7.
-- **Spec fidelity:** implemented against the published ACP specification (agentic-commerce-protocol repo, OpenAPI version 2026-04-17): exact endpoint paths (`POST /checkout_sessions`, `GET`/`POST /checkout_sessions/{id}`, `POST .../complete`, `POST .../cancel`), the official status enum (`not_ready_for_payment | ready_for_payment | completed | canceled`), integer minor-unit amounts (paise) with lowercase ISO 4217 currency (`inr`), create returning 201 with a session id even when validation fails (problems carried as `messages[]` errors), and complete returning an `order` object on success.
-- **Allowance intake:** until a full delegated-payment/Shared-Payment-Token integration exists, the buyer-agent conveys its spending mandate at session creation via an `allowance` object mirroring the delegate-payment spec's fields (`max_amount` in paise, `currency`, `expires_at`). The gate checks this same allowance when evaluating proposals; completion re-verifies expiry before charging.
-- **Bundle rendering:** an approved `bundle_upsell` appears in the session payload as a `suggested_add_on` field plus an informational message — a small, documented extension beyond the base ACP session shape. Discounts are reflected directly in line-item `discount` fields and totals.
-- **Session storage:** checkout sessions live in an in-memory repository (ephemeral runtime state); the durable record of anything that matters is the audit trail, per §4.6.
+- `reasoning/agent.py`: AIAgent loop (prompt → API → tool_calls → loop → persist), self-registering `ToolRegistry`.
+- `reasoning/llm.py`: provider resolution with `StubBackend` fallback — any failure degrades to keyless stub.
+- Tools: `get_catalog_item`, `get_clearance_policy`, `get_bandit_scores`, `estimate_outcome`, `get_regimen_graph`.
 
-### 4.4 Buyer-Agent (scripted, ACP-speaking)
+### 4.4 BuyerAgent
 
-A stand-in built specifically for this project to prove end-to-end transactability, rather than assuming an external agent exists. It genuinely speaks ACP (discovers the product feed, creates a session, receives/reviews an offer, completes with a scoped payment token) rather than using a custom ad-hoc format — this was a deliberate choice to make the "transactable by a real AI buyer" claim defensible rather than simulated in name only.
+ACP-speaking buyer agent with its own LLM reasoner:
 
-In this implementation the buyer-agent is an asynchronous HTTP client speaking real ACP against any base URL it is pointed at. Its offer review is a deterministic threshold policy — accept a discount at or above a configured minimum percent, accept a suggested add-on within a configured share of cart — and it independently re-checks its own spending mandate before completing, canceling rather than exceeding it. Every run emits a plain-language transcript of what it saw and decided, so a demo can show exactly why the buyer behaved as it did.
+- Discovers catalog, opens session, evaluates offers, accepts/declines.
+- Memory: purchase history for repeat-buyer behavior.
+- Verdict format: `Verdict: ACCEPT` / `Verdict: DECLINE`.
 
-### 4.5 Eval Harness
+### 4.5 Shop Assistant
 
-The centerpiece of the project's "heavy AI work" story. Its job is to prove the bandit is better than doing nothing clever, **before** it is trusted with live proposals, and to keep validating it as it continues learning.
+Greets the buyer, curates recommendations based on interests and budget. Entry point: `POST /api/shop/greet`.
 
-- **Data strategy (hybrid):** synthetic checkout data is generated first for offline validation, then the bandit continues learning from real transactions during live demo runs. Pure live-only learning was rejected because a live demo produces too few transactions for a bandit to show meaningful learning; pure synthetic-only was rejected because it would misrepresent a simulation as real-world performance.
-- **Synthetic buyer model:** deliberately kept simple and legible (a probabilistic model with a small number of understandable factors — offer size, offer relevance, randomness) rather than another opaque learned model, to avoid just moving the "trust me" problem down a layer. Acceptance is probabilistic, not a hard rule, and varies by context (different simulated cart types respond differently to the same offer) so there is genuinely something for the bandit to learn.
-- **Calibration:** the synthetic acceptance model is calibrated using researched benchmarks as a **design input** — a baseline upsell acceptance rate in the 3–8% range (rising with more relevant/generous offers), general ecommerce discount norms of roughly 10–30% with luxury/high-ticket items staying under 15%, and the fact that automatic (non-coupon) discounts have been reported to reduce cart abandonment by 10–20%.
-- **Metrics:**
-  - **Uplift over baseline** — the bandit's policy, replayed against synthetic/historical sessions, compared to the plain rule-based fallback.
-  - **Gate-compliance rate** — how often the bandit's *raw* suggestions (before gating) would have passed the gate unmodified. A bandit that's constantly rejected isn't learning inside its real constraints.
-  - **Regret** — a standard bandit metric: how much worse the bandit's choices were compared to the best possible choice in hindsight.
-- **Honesty framing for the demo:** the offline number is evidence the bandit-plus-gate machinery works correctly and learns something coherent under controlled conditions — not a claim about real-world revenue performance.
-- **Live self-reporting:** the eval numbers are exposed by the running system itself, not computed off to the side. A small `/eval/report` endpoint lives in the same FastAPI app as the checkout surface, reads from the same audit store the checkout flow writes to, and returns the three metrics above (uplift over baseline, gate-compliance rate, regret) as plain JSON. A short matplotlib script renders the demo charts (uplift over time as the bandit learns, regret trending down) from that same underlying data. This keeps the harness's verdict provably connected to the real system — same data source, same running process — so the audit trail and the harness's own assessment can be shown side by side with nothing explained away as a separate pipeline.
-- **Simulator factors (implemented):** four legible mechanisms, no learned components: category-level price sensitivity scales how much a discount lifts completion; bundle take-rates split relevant (scaled by affordability) versus irrelevant (~4%, the low end of the researched 3–8% passive baseline); a pushiness factor makes oversized or irrelevant add-ons risk abandoning checkout entirely; a flat 1% annoyance probability attaches to any rendered offer. Expected net revenue per (session, action) is computed analytically and shared by both the reward path and the regret path, so they cannot drift apart.
-- **Reward and regret definitions (implemented):** reward is realized net revenue measured against the session's own no-offer completion probability (the simulator knows the counterfactual, which offline evaluation legitimately allows). Regret is standard pseudo-regret: per decision, the analytic best arm including proposing nothing, minus the analytic value of what actually went out after gating — summed over time, plotted as a flattening curve.
-- **Baseline:** the comparison policy is the gate's own static fallback bundle proposed through the identical gate — the honest "no learned model" alternative, evaluated on paired identical sessions.
-- **Storage and serving (implemented):** replay runs persist per-step records and run summaries into an eval store backed by the same SQLite database file as the audit trail (separate tables, one data home). `/eval/report` returns the latest run's metrics plus the honesty note verbatim: evidence of coherent learning under controlled conditions, not a prediction of real-world revenue.
-- **Off-policy counterfactual evaluation (implemented):** every bandit-proposed decision lands in a `decision_log` table (context fields, chosen arm, allowed-unmodified flag) and its reward — the *identical* §4.7-aligned net-revenue metric, never a second derivation — is written back at resolution. `GET /eval/offpolicy?alpha=X` then estimates what an otherwise-identical policy differing only in exploration parameter would have earned over the logged window, via self-normalized inverse propensity scoring. Because pure-argmax LinUCB has degenerate selection probabilities (0 or 1), both policies are scored under a stated uniform-exploration kernel (ε=0.05) — disclosed as the condition for IPS to be well-defined, not passed off as what literally ran. Both sides are scored statically from the pretrained snapshot (α affects only the bonus term); snapshot-vs-logged argmax agreement is computed and surfaces as a drift caveat below 70%. Every stable estimate carries a 95% confidence interval and effective sample size; fewer than 30 resolved decisions or a degenerate ESS returns an explicit too-sparse verdict instead of a number. First real window (260 logged decisions): α=0.25 estimated at ₹292.85/decision (CI 272–313, ESS 260/260, 100% snapshot agreement) — identical argmax throughout, so the honest counterfactual finding was "reduced exploration would have changed nothing on this window," which is precisely the kind of unexciting truth this machinery exists to report faithfully.
+### 4.6 Settlement
 
-### 4.6 Audit Trail
+Razorpay test-mode settlement: order creation, payment link, capture. Falls back to scripted provider when creds absent.
 
-A durable log of every `AuditEntry` ever written, queryable and displayable — this is what gets shown live to satisfy the "show the audit trail" requirement. Every entry exists regardless of whether the proposal was approved, rejected, accepted, declined, or failed.
+### 4.7 Frontend (React + TypeScript)
 
-Implemented as a SQLite store (see §11). Both the checkout surface and the eval report endpoint (§4.5) read and write through this one store — there is exactly one source of record. Writes are executed through a thread pool when issued from async request handlers, so disk latency can never stall request handling.
+Production-grade storefront in `web/`:
 
-Entry timing: every gate-allowed proposal gets a single `AuditEntry` the moment the gate allows it, with a provisional `offered` outcome (so an approved offer is recorded even if the buyer abandons the session — there is no silent path). Proposals rejected by the gate get their `AuditEntry` immediately, with outcome `declined` naming the gate's reason. At session resolution the provisional `offered` entry is updated in place (never duplicated) to its final outcome — `accepted` on successful payment, `declined` if the buyer cancels, `failed` if settlement fails — so every entry's outcome states final truth about what happened, never a stale provisional state. Every proposal ends up with exactly one entry; nothing is dropped or silently overwritten.
+- **Stack:** Vite + React 18 + TypeScript, pure CSS (no UI libs).
+- **Design:** YC-themed — orange (#FF4000) + black + white editorial aesthetic.
+- **Features:** live agent panel, product grid with filters, cart, product modal, reasoning log.
+- **Build:** `npm run build` → `dist/`, served by FastAPI at `GET /storefront`.
+- **Lint:** Oxlint + anti-slop plugin (15 generic rules).
 
-### 4.7 Safety Watchdog
+### 4.8 Eval & Watchdog
 
-System-level extension of "bounded and gated": the gate bounds each transaction; the watchdog bounds the decision layer as a whole.
+- Gate fuzzing: 20,000 decisions, 0 violations.
+- Off-policy IPS counterfactual with 95% CI.
+- Watchdog: sabotage detection → auto-demotion → manual re-promotion.
 
-- **What it watches:** rolling window (last 100 bandit decisions) of two signals — net revenue per decision and raw-proposal gate-compliance rate. Abstentions count as decisions worth zero revenue but carry no compliance signal.
-- **What it compares against:** the harness's own offline-validated baseline (§4.5), read from the latest run in the shared eval store at startup — same data home, no second source of truth. If no eval run exists it falls back to conservative defaults, loudly.
-- **Reward-definition alignment:** live net revenue uses the same counterfactual convention as the offline metric — completions are credited against the calibration average of no-offer completion probability (`AVG_BASE_COMPLETION_PROB` from the simulator) rather than against the raw cart total, so a healthy discount-giving bandit scores positively and the comparison is like-for-like. This alignment was added after the first integration attempt exposed that naive paid-minus-base accounting would have flagged any well-trained policy as failing.
-- **Trigger thresholds (concrete):** demotion fires when either signal degrades past a fixed fraction of baseline over at least 30 samples — net revenue below 50% of baseline, or compliance below 70% of baseline. With n≥30 these margins sit far beyond ordinary sampling noise; a 400-sample variance check confirms zero false positives under healthy operation.
-- **Demotion:** the pipeline stops consulting the bandit entirely and routes every proposal through the existing `fallback_rule` path — the exact code path already proven for bandit abstention, so post-demotion gating and audit behavior is identical to the rule-only system by construction, not by re-testing hope. A durable record lands in the `system_events` table of the shared SQLite store explaining what happened and why.
-- **Recovery is manual only:** an operator call (or `POST /watchdog/promote` with a required note) re-enables the bandit and clears the rolling windows. No auto-recovery — flapping risk isn't worth it.
-- **Deterministic seeding for demos:** `RAZORPAY_AGENT_SABOTAGE_BANDIT=1` wraps the live policy in a `SabotagedPolicy` that always proposes a deliberately gate-rejected arm, driving compliance to zero on schedule. The watchdog then catches a real failure through the real pipeline on command — never by chance. `demo/run_watchdog_demo.py` walks the full arc (healthy → sabotage → auto-demotion → rule-only → manual re-promotion) in one self-contained run.
+### 4.9 Regimen Graph
 
-### 4.8 Stagnant Clearance Objective (extension of §4.7, dead stock only)
-
-A stagnant unit is dead stock: an unsold unit is a *continuing* cost, so the decision objective for it is to **clear the unit, not to maximize per-unit margin**. This reframes the reward for stagnant sessions only — normal inventory keeps the §4.7 net-revenue reward unchanged.
-
-- **Completed clearance (a real proposal the buyer accepts):** realizes the avoided carrying cost of the unit — `clearance_relief_rupees(cart, days_in_stock)` — and **drops the per-unit margin term**. The margin forgone on a discount is irrelevant once the goal is "get it out of the warehouse"; what matters is that the unit left, stopping the bleed.
-- **Non-clearance (a real proposal the buyer declines or that otherwise does not complete):** realizes a **negative** reward equal to exactly **one period (one day) of carrying cost** — `carrying_cost_penalty_rupees(cart) = DAILY_HOLDING_COST_RATE * cart`.
-- **Single documented rate:** both terms share the one `ANNUAL_HOLDING_COST_RATE = 0.25` assumption already used for the original clearance relief (retail carrying cost commonly cited at ~20–30%/yr). No second number was introduced, and **neither was tuned to a target** — the same "documented assumption, not tuned to look good" standard as the original discount caps and HOLDING_COST.
-- **Why deeper discounts win, honestly:** for a given item the relief is constant across arms, so the expected stagnant reward is `p_clear * relief − (1 − p_clear) * penalty`. Completion probability `p_clear` therefore dominates, and deeper discounts (higher completion) strictly out-score shallower ones — without inflating the carrying cost to the ~260%/yr a margin-retention reading would have required (which would have been exactly the forbidden "tuned to look good" move).
-- **Observed outcomes only:** the penalty applies *solely* to a real proposal that resulted in a decline/no-sale on a stagnant item — an event the system actually observed. It is **never** applied to a hypothetical no-traffic scenario the system has no visibility into. The live resolve paths (`checkout/offers.py`) and the simulator (`eval/synthetic.py`) share this single definition, so the bandit update, audit metric, and watchdog all agree.
-
-### 4.9 Regimen / Co-purchase Graph (P3)
-
-The merchant's regimen (co-purchase) relationships are a **documented prior** — `decision/co_purchase_graph.py` — not inferred by the bandit. Edge weight = regimen strength; node degree = a popularity proxy. It is the MerchantAgent graph state and the single source of truth the candidate-generator node and the simulator both read from.
-
-- **Candidate-generator node:** `candidate_bundles_for(target_sku, catalog, graph)` returns `BundleArm`s whose `anchor_sku` is the target SKU and whose `bundle_item` is a regimen neighbor, priced from the catalog. The bandit may choose among these instead of the static catalog bundles, so offers pair to what the buyer is actually viewing. In the `MerchantAgentGraph` this is a real graph node (`generate_candidates`) that runs every proposal and populates `candidate_arms` into the decision state (live selection among these arms is a follow-up).
-- **Simulator honors the prior:** `eval/replay.py` derives bundle relevance from `CoPurchaseGraph.relevant_categories(category)` instead of naive category equality. The reward formula shape is unchanged — it reuses `BUNDLE_RELEVANT/IRRELEVANT_TAKE_RATE`, only the *source* of the relevance flag moves to this graph.
-
-### 4.10 Advisory Reasoning (LLM, isolated — see §2 principle 1)
-
-A Hermes-style reasoner that explains *why* the decision layer proposed an offer. It is strictly advisory and isolated: it reads context through registered **read-only** tools and writes a `reasoning_log` trace (a side table, separate from the core audit trail). It never proposes or executes a settlement; money execution stays in the bandit + gate path.
-
-- **Backends (pluggable):** `stub` (keyless, scripted — the default so the demo runs with no keys), `openai`, `anthropic`, and as of P4 `tencent` (Tencent HY3) and `nous` (Nous Portal), both OpenAI-compatible and reading `<PREFIX>_API_KEY` / `<PREFIX>_BASE_URL` from the environment.
-- **Selection:** `resolve_provider` precedence is explicit name → config → `RAZORPAY_AGENT_LLM_PROVIDER` env → `stub`. Any construction failure degrades to `stub`, so the reasoner can never block or alter the decision layer.
-- **Key hygiene:** a scoped `.env` loader exports only reasoning-related keys into `os.environ` (Razorpay credentials are intentionally left to the server's own loader), so no secret leakage and no cross-contamination with the money path.
+`decision/co_purchase_graph.py`: co-purchase prior as documented edge weights. Bundle arms carry `anchor_sku` for regimen-anchored suggestions.
 
 ---
 
-## 5. End-to-End Flow
+## 5. Repository Layout
 
-1. Buyer-agent discovers the merchant's product feed (ACP) and creates a checkout session for an item.
-2. The decision layer (LinUCB bandit) observes the session context (cart, allowance) and emits a `ProposedAction` — a discount or bundle suggestion, or nothing if it has low confidence.
-3. The rule & policy layer evaluates the proposal as a `GateDecision`, checking it against the discount cap, bundle cap, one-offer-per-checkout limit, and the buyer-agent's spending allowance.
-4. If rejected, the gate's `final_action` falls back to the plain default. If approved (possibly capped), the proposal becomes the session's real offer.
-5. An `AuditEntry` is written immediately, regardless of outcome.
-6. The buyer-agent completes the session using its scoped payment token; Razorpay's test-mode APIs process the charge.
-7. **Graceful failure case:** if the payment token is expired or rejected at completion, the system does **not** silently retry (to avoid a duplicate charge). It rolls back any session-level offer state, moves the session to a clean failed/needs-new-authorization status, and writes an `AuditEntry` for the failure with the same rigor as a success. On the wire this maps to ACP's status enum as `not_ready_for_payment` carrying a `payment_declined` error message — the protocol has no dedicated failed status, and this mapping preserves its meaning exactly.
-8. The eval harness periodically (or continuously) checks the bandit's ongoing performance against its offline-validated baseline.
-
-## 6. Protocol Choice — Why ACP, Not UAP / AP2 / x402
-
-The buildathon brief names NPCI's UAP and the "protocol race" (ACP, AP2, x402) as the reason this problem matters now. Each was evaluated:
-
-- **NPCI UAP** — not implementable. As of this project's planning, UAP has no public technical specification; it is still a proposed framework awaiting RBI approval. Referenced narratively in this project's framing, not implemented.
-- **AP2 (Google)** — a layer above checkout, focused on cryptographically signed authorization mandates (IntentMandate, PaymentMandate). Its core idea (a bounded, provable spending authorization) is borrowed conceptually via ACP's own delegated-payment allowance, without implementing AP2's full cryptographic mandate stack — judged as more scope than the timeline supports for a second full protocol integration.
-- **x402 (Coinbase)** — HTTP-native but built around crypto/stablecoin settlement. Ruled out as a poor fit for a Razorpay INR test-mode flow.
-- **ACP (OpenAI/Stripe)** — chosen. It directly addresses checkout execution (product discovery, session lifecycle, delegated payment), which is exactly what "make a merchant transactable end-to-end" requires, and its delegated-payment allowance already carries a mandate-like bounded authorization concept.
-
-## 7. Numeric Parameters (reference)
-
-| Parameter | Value | Rationale |
-|---|---|---|
-| Max discount | 12–15%, plus absolute rupee cap (implemented: **15% + ₹300**) | Above the ~3–8% passive acceptance baseline, well under the 30% high end reserved for clearance/luxury-avoidant categories; the absolute cap mirrors Razorpay's own Offers product pattern |
-| Max bundle/upsell price | ~20% of cart value (implemented: **20%**) | Keeps suggestions proportionate rather than overwhelming the checkout |
-| Offers per checkout | 1 | Simplest to bound and explain |
-| Confidence representation | Float, 0–1 | Precise enough for the eval harness to threshold against |
-
-## 8. Extension Points
-
-This is what "modular, easy to add/remove" means concretely in this system:
-
-- **Swap the decision layer:** any module that reads session context and emits a valid `ProposedAction` can replace the LinUCB bandit — a different bandit, a rules engine, anything — without touching the rule layer, audit trail, or checkout surface.
-- **Add a new hard limit:** add a new check inside the rule & policy layer's gate logic. No other component needs to change.
-- **Add a new checkout channel:** any new surface (e.g. a second protocol, a different buyer-agent type) only needs to produce sessions that flow through the same `ProposedAction` → `GateDecision` → `AuditEntry` pipeline.
-- **Add a new action type:** extend the `ProposedAction` shape with a new `action_type` and a corresponding gate check — existing action types and their checks are unaffected.
-- **Add a new currency:** money is stored as integer minor units and mapped through a `Currency` (code + `minor_unit_divisor`) in `core/currency.py`. INR/USD (÷100), JPY (÷1), KWD (÷1000) ship; the checkout session carries its `Currency`, and `to_paise`/`to_rupees` are already currency-aware. To support a new currency: add one `Currency` constant and surface it through the ACP `allowance.currency` field — no change to the gate, audit, or decision layers. The demo catalog is INR-only by design.
-
-## 9. Explicitly Out of Scope
-
-- LLM is out of scope for the decision-making and money-action path. It lives only in the advisory reasoning module (§4.10), where it cannot affect settlements; the bandit and the eval harness remain deliberately non-LLM.
-- No full NPCI UAP implementation (no public spec exists).
-- No full AP2 cryptographic mandate stack (concept borrowed via ACP's delegated payment allowance instead).
-- No x402 / crypto settlement.
-- No multi-offer stacking per checkout.
-
-## 10. Glossary
-
-- **ACP (Agentic Commerce Protocol):** A public specification (OpenAI/Stripe) for how AI buyer-agents discover products and complete checkouts with merchants.
-- **AP2 (Agent Payments Protocol):** Google's protocol for cryptographically proving what a human authorized an agent to spend.
-- **Bandit / contextual bandit:** A machine learning approach for repeated single-step decisions (see one action, get one reward, no long-term state) — the simplest member of the reinforcement learning family.
-- **LinUCB:** A specific contextual bandit algorithm that picks actions by weighing both expected reward and uncertainty, favoring under-explored options in a mathematically principled way.
-- **Mandate / allowance:** A bounded, time-limited authorization (max amount + expiry) proving what a buyer-agent is permitted to spend on a human's behalf.
-- **Regret (bandit metric):** How much worse a policy's choices were compared to the best possible choice in hindsight, summed over time.
-- **Gate:** The rule & policy layer's act of checking a proposed action against hard limits before it's allowed to become real.
+```
+razorpay-agent/
+├── src/razorpay_agent/
+│   ├── core/               # ProposedAction, GateDecision, AuditEntry
+│   ├── gate/               # Rule & policy layer
+│   ├── decision/           # LinUCB bandit + regimen graph
+│   ├── checkout/           # ACP API + Razorpay settlement
+│   ├── buyer/              # BuyerAgent
+│   ├── reasoning/          # Advisory LLM reasoners
+│   ├── shop/               # Shop assistant
+│   ├── merchant.py         # MerchantAgent graph
+│   ├── server.py           # FastAPI app factory
+│   ├── storefront/         # Static HTML fallback
+│   └── eval/               # Eval harness + watchdog
+├── web/                    # React frontend (Vite + TS)
+│   ├── src/
+│   │   ├── components/     # Header, Hero, ProductCard, CartPanel, etc.
+│   │   ├── context/        # AppContext (state + startDemo)
+│   │   ├── types/          # Product, CartItem, AppState
+│   │   └── index.css       # YC-themed design system
+│   ├── tools/oxlint/       # anti-slop lint plugin
+│   └── dist/               # Production build (served by FastAPI)
+├── demo/                   # Demo scripts + pretrain
+├── tests/                  # Pytest suite
+├── architecture.md         # This file
+├── prompt.md               # How to change the system
+└── README.md               # Quickstart
+```
 
 ---
 
-## 11. Implementation Stack
+## 6. Running in Production
 
-Chosen for legibility and solo-developer speed under the buildathon deadline. Boring on purpose — every choice below is mainstream, well-documented, and replaceable without touching the core contract.
+```bash
+# Backend
+pip install -e ".[dev,llm]"
+python run_server.py          # :8613
 
-| Concern | Choice | Notes |
-|---|---|---|
-| Language | Python 3.11+ | |
-| HTTP surface | FastAPI | hosts the ACP checkout endpoints and the eval report endpoint in one app (§4.3, §4.5) |
-| Audit storage | SQLite via stdlib `sqlite3` | durable and queryable with zero infrastructure; written through a thread pool from async handlers (§4.6) |
-| Bandit math | numpy | LinUCB is small matrix algebra; no ML framework |
-| Settlement | official Razorpay SDK, test mode only | §4.3 |
-| Tests | pytest | each component green-tested before wiring the next |
-| Charts | matplotlib | static demo plots generated from the same data the report endpoint serves (§4.5) |
+# Frontend (development)
+cd web && npm install && npm run dev    # :5173
 
-Repository layout mirrors the component list one-to-one: `src/razorpay_agent/{core,gate,decision,audit,checkout,buyer,eval,watchdog}` plus `tests/` and `demo/` at the repo root. The single top-level package exists for import safety; the subpackage names match the components above. Demo tooling lives under `demo/`: `pretrain_bandit.py` (one-time warm-start generation), `run_demo.py` (quick end-to-end), `run_capture_demo.py` and `run_full_demo.py` (settlement chain and full four-phase walkthrough), `run_watchdog_demo.py` (demotion/re-promotion arc), `run_offpolicy_demo.py` (counterfactual evaluation over a freshly logged window), with artifacts written to timestamped folders under `demo/out/`.
+# Frontend (production build)
+cd web && npm run build       # outputs to web/dist/
+# FastAPI auto-serves dist/index.html at GET /storefront
 
-Payment credentials come exclusively from a gitignored `.env` file at the repo root or from shell environment variables (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`) — never from code, repo files, or chat. When credentials are absent the server falls back loudly to the scripted payment provider rather than failing silently, so a demo can never be mistaken for live settlement.
+# Full e2e demo
+python demo/run_full_demo.py --wait 900
+```
 
-No LLM dependency appears in the *core* decision/eval stack — by design (§2). The optional `llm` extra pulls in `openai` for the advisory reasoning module only (§4.10); it is never required for the system to run.
+Environment variables:
+- `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` — live Razorpay (optional, falls back to scripted)
+- `RAZORPAY_AGENT_LLM_PROVIDER` — `stub` (default), `openai`, `anthropic`, `nous`
+
+---
+
+## 7. What to Change (and What Not To)
+
+**Frozen (don't break):** the core contract (§3), the one rule (§3.4), the gate's hard limits.
+
+**Pluggable (safe to swap):** the bandit algorithm, the LLM provider, the frontend design, the catalog content.
+
+See `prompt.md` for the full change-governance rules.

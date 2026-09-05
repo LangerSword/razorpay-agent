@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from razorpay_agent.reasoning.agent import ReasoningAgent
 
 from razorpay_agent.audit import AuditStore
 from razorpay_agent.checkout.sessions import (
@@ -46,6 +50,7 @@ class OfferPipeline:
         decision_log=None,
         temperature: float = 0.0,
         rng=None,
+        reasoning_agent: "ReasoningAgent | None" = None,
     ) -> None:
         self._policy = policy
         self._gate = RulePolicyGate(gate_config)
@@ -56,6 +61,15 @@ class OfferPipeline:
         self._temperature = temperature
         self._rng = rng
         self._graph = None
+        self._reasoning = reasoning_agent
+        self._force_next_arm: str | None = None
+
+    def force_next_arm(self, arm_id: str | None) -> None:
+        """Force the next proposal to use a specific bandit arm (demo/debug).
+
+        The forced arm still passes through the gate, so this deterministically
+        demonstrates gate-capping behavior. Pass ``None`` to clear."""
+        self._force_next_arm = arm_id
 
     def attach_graph(self) -> None:
         """Wrap the decision flow in a LangGraph StateGraph (see graph/merchant_graph).
@@ -76,18 +90,29 @@ class OfferPipeline:
     ) -> AppliedOffer | None:
         if state.applied_offer is not None:
             return state.applied_offer
-        if self._graph is not None:
-            return self._graph.propose_for_session(state, cart_value_paise, target_sku, category)
 
-        decision_context = self._step_context(state, cart_value_paise, target_sku, category)
-        arm_id, action, bandit_consulted = self._step_consult(
-            state, decision_context, cart_value_paise
-        )
-        decision = self._step_gate(state, action, cart_value_paise)
-        return self._step_finalize(
-            state, action, decision_context, decision, arm_id, bandit_consulted,
-            cart_value_paise, target_sku, category,
-        )
+        if self._graph is not None:
+            offer = self._graph.propose_for_session(state, cart_value_paise, target_sku, category)
+        else:
+            decision_context = self._step_context(state, cart_value_paise, target_sku, category)
+            arm_id, action, bandit_consulted = self._step_consult(
+                state, decision_context, cart_value_paise
+            )
+            decision = self._step_gate(state, action, cart_value_paise)
+            offer = self._step_finalize(
+                state, action, decision_context, decision, arm_id, bandit_consulted,
+                cart_value_paise, target_sku, category,
+            )
+
+        # Schedule LLM reasoning as a background thread (non-blocking).
+        # The buyer gets an immediate response; the reasoner runs async and
+        # updates state.reasoning_trace when done.
+        if offer is not None and offer.gate_decision.allowed:
+            self.schedule_reasoning(
+                state, offer.proposed_action, offer.decision_context,
+                offer.gate_decision, offer.arm_id,
+            )
+        return offer
 
     def _step_context(
         self,
@@ -118,24 +143,40 @@ class OfferPipeline:
         arm_id: str | None = None
         action: ProposedAction | None = None
         if bandit_consulted:
-            # Both a deep discount and a bundle upsell are valid ways to clear
-            # stale stock. Token discounts (5-15%) do not move dead inventory, so
-            # for stagnant sessions the discount arms are restricted to the deeper
-            # ones while the bundle remains available. Selection uses softmax
-            # sampling (temperature > 0) when configured, else greedy argmax.
-            allowed = None
-            if state.is_stagnant:
-                allowed = [
-                    aid
-                    for aid in self._policy.arm_ids
-                    if aid.startswith("b") or is_deep_discount_arm(aid)
-                ]
-            arm_id, action = self._policy.propose_with_arm(
-                decision_context,
-                allowed_arm_ids=allowed,
-                temperature=self._temperature,
-                rng=self._rng,
-            )
+            if self._force_next_arm is not None:
+                # Demo/debug: deterministically force a specific arm (still gated).
+                forced_id = self._force_next_arm
+                if forced_id not in self._policy._arms:
+                    forced_id = None
+                if forced_id is not None:
+                    arm = self._policy._arms[forced_id]
+                    from razorpay_agent.decision.linucb import LinUCBPolicy
+                    ctx = decision_context
+                    features = self._policy._encoder.encode(ctx)
+                    expected, bonus = self._policy._score(forced_id, features)
+                    confidence = abs(expected) / (abs(expected) + bonus) if (abs(expected) + bonus) > 0 else 0.0
+                    action = self._policy._to_action(arm, ctx, expected, confidence)
+                    arm_id = forced_id
+                self._force_next_arm = None
+            else:
+                # Both a deep discount and a bundle upsell are valid ways to clear
+                # stale stock. Token discounts (5-15%) do not move dead inventory, so
+                # for stagnant sessions the discount arms are restricted to the deeper
+                # ones while the bundle remains available. Selection uses softmax
+                # sampling (temperature > 0) when configured, else greedy argmax.
+                allowed = None
+                if state.is_stagnant:
+                    allowed = [
+                        aid
+                        for aid in self._policy.arm_ids
+                        if aid.startswith("b") or is_deep_discount_arm(aid)
+                    ]
+                arm_id, action = self._policy.propose_with_arm(
+                    decision_context,
+                    allowed_arm_ids=allowed,
+                    temperature=self._temperature,
+                    rng=self._rng,
+                )
         if action is None:
             action = self._fallback_action(state.id, to_rupees(cart_value_paise, state.currency))
             arm_id = None
@@ -234,6 +275,147 @@ class OfferPipeline:
                 allowed_unmodified=unmodified_flag,
             )
         return offer
+
+    def schedule_reasoning(
+        self,
+        state: CheckoutSessionState,
+        action: ProposedAction,
+        decision_context: DecisionContext,
+        decision: "GateDecision",
+        arm_id: str | None,
+    ) -> None:
+        """Schedule LLM reasoning as a background task (non-blocking).
+
+        The buyer gets an immediate response; the reasoner runs async and
+        updates state.reasoning_trace when done. Subsequent GETs on the session
+        will surface the trace.
+        """
+        if self._reasoning is None:
+            return
+        bandit_action = None
+        if arm_id is not None and action is not None:
+            bandit_action = {
+                "action_type": action.action_type,
+                "arm_id": arm_id,
+            }
+            if action.action_type == "discount" and action.discount_percent is not None:
+                bandit_action["discount_percent"] = float(action.discount_percent)
+            elif action.action_type == "bundle_upsell":
+                bandit_action["bundle_item"] = action.bundle_item
+                bandit_action["bundle_price"] = float(action.bundle_price) if action.bundle_price else 0.0
+
+        gate_decision = {
+            "allowed": decision.allowed,
+            "reason": decision.reason,
+            "final_action_type": decision.final_action.action_type if decision.final_action else None,
+        }
+
+        session_id = state.id
+        target_sku = decision_context.target_sku
+        item_category = decision_context.item_category
+        cart_value_inr = decision_context.cart_value_inr
+        buyer_allowance_inr = decision_context.buyer_allowance_inr
+        is_stagnant = decision_context.is_stagnant or False
+        days_in_stock = decision_context.days_in_stock
+        reasoning = self._reasoning
+
+        import threading
+        import time as _time
+
+        def _background():
+            print(f"  [reasoner] START {session_id}", flush=True)
+            try:
+                from razorpay_agent.checkout.api import _event_bus
+                _event_bus.put_nowait({
+                    "type": "merchant_reasoning_start",
+                    "agent": "MerchantAgent",
+                    "message": f"🧠 Merchant reasoner started for {target_sku}",
+                    "session_id": session_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                })
+            except Exception:
+                pass
+            
+            try:
+                t0 = _time.monotonic()
+                result = reasoning.reason(
+                    session_id,
+                    target_sku=target_sku,
+                    item_category=item_category,
+                    cart_value_inr=cart_value_inr,
+                    buyer_allowance_inr=buyer_allowance_inr,
+                    is_stagnant=is_stagnant,
+                    days_in_stock=days_in_stock,
+                    bandit_action=bandit_action,
+                    gate_decision=gate_decision,
+                )
+                elapsed = _time.monotonic() - t0
+                print(f"  [reasoner] DONE {session_id} in {elapsed:.1f}s, {len(result.steps)} steps, trace set")
+                
+                ft = result.final_text.strip()
+                low = ft.lower()
+                if "verdict: approve" in low:
+                    verdict = "APPROVE"
+                elif "verdict: reject" in low:
+                    verdict = "REJECT"
+                elif "verdict: review" in low:
+                    verdict = "REVIEW"
+                else:
+                    verdict = "REVIEW"
+                
+                state.reasoning_trace = {
+                    "provider": result.provider,
+                    "model": result.model,
+                    "fallback": result.fallback,
+                    "final_text": result.final_text,
+                    "verdict": verdict,
+                    "elapsed_seconds": elapsed,
+                    "steps": [
+                        {"step": s.step, "role": s.role, "content": s.content}
+                        for s in result.steps
+                    ],
+                }
+                
+                try:
+                    from razorpay_agent.checkout.api import _event_bus
+                    _event_bus.put_nowait({
+                        "type": "merchant_reasoning_done",
+                        "agent": "MerchantAgent",
+                        "message": f"✅ Merchant verdict: {verdict} ({elapsed:.1f}s)",
+                        "session_id": session_id,
+                        "verdict": verdict,
+                        "final_text": result.final_text[:500],
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    })
+                except Exception:
+                    pass
+            except Exception as exc:
+                import traceback
+                print(f"  [reasoner] ERROR {session_id}: {type(exc).__name__}: {exc}", flush=True)
+                state.reasoning_trace = {
+                    "provider": "error",
+                    "model": None,
+                    "fallback": True,
+                    "final_text": f"Reasoning unavailable: {type(exc).__name__}",
+                    "verdict": "ERROR",
+                    "steps": [],
+                }
+                try:
+                    from razorpay_agent.checkout.api import _event_bus
+                    _event_bus.put_nowait({
+                        "type": "merchant_reasoning_done",
+                        "agent": "MerchantAgent",
+                        "message": f"❌ Merchant reasoner failed: {type(exc).__name__}",
+                        "session_id": session_id,
+                        "verdict": "ERROR",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    })
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_background, daemon=True)
+        t.name = f"reasoning-{session_id}"
+        t.start()
 
     def resolve_accepted(self, state, paid_total_paise: int, base_total_paise: int) -> None:
         offer = state.applied_offer

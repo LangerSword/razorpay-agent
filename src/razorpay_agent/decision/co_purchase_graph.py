@@ -17,19 +17,30 @@ class RegimenEdge:
 # (target -> [(neighbor, regimen_strength, relation)]). Edge weight = regimen strength
 # (how natural the pairing is); degree (number of neighbors) is the popularity proxy.
 #
-# This is a *documented prior*, not inferred by the bandit. P3 builds it from the
-# merchant's actual catalog relationships; it is the single source of truth the
-# candidate-generator node and the simulator both read from. It is deliberately
-# conservative (same-category pairings plus a couple of strong accessory links).
+# This is a *documented prior*, not inferred by the bandit. It is the single source of
+# truth the candidate-generator node and the simulator both read from. Relationships
+# span both same-category regimen pairs (shampoo + conditioner) and cross-category
+# lifestyle pairings (coffee mug + coffee beans).
 _REGIMEN_PRIOR: dict[str, list[tuple[str, float, str]]] = {
-    "sku-tee": [("sku-socks", 1.2, "wardrobe_essential")],
-    "sku-hoodie": [("sku-socks", 1.5, "wardrobe_essential")],
-    "sku-oldstock": [
-        ("sku-hoodie", 1.3, "layering"),
-        ("sku-socks", 1.0, "wardrobe_essential"),
-    ],
-    "sku-headphones": [("sku-charger", 1.4, "power_accessory")],
-    "sku-charger": [("sku-headphones", 1.4, "power_accessory")],
+    # Home
+    "sku-candle": [("sku-diffuser", 1.3, "home_essential")],
+    "sku-mug": [("sku-coffee", 1.5, "morning_routine")],
+    "sku-diffuser": [("sku-candle", 1.2, "home_essential")],
+    # Personal care
+    "sku-shampoo": [("sku-conditioner", 1.6, "regimen_pair"), ("sku-lotion", 1.1, "bath_routine")],
+    "sku-conditioner": [("sku-shampoo", 1.5, "regimen_pair")],
+    "sku-lotion": [("sku-shampoo", 1.2, "bath_routine")],
+    # Apparel
+    "sku-tee": [("sku-socks", 1.3, "wardrobe_essential")],
+    "sku-hoodie": [("sku-socks", 1.4, "wardrobe_essential")],
+    "sku-oldstock": [("sku-hoodie", 1.3, "layering"), ("sku-socks", 1.0, "wardrobe_essential")],
+    # Kitchen
+    "sku-coffee": [("sku-mug", 1.4, "morning_routine")],
+    "sku-bottle": [("sku-shaker", 1.3, "fitness_routine")],
+    "sku-shaker": [("sku-bottle", 1.2, "fitness_routine")],
+    # Stationery
+    "sku-notebook": [("sku-pen", 1.4, "desk_essential")],
+    "sku-pen": [("sku-notebook", 1.3, "desk_essential")],
 }
 
 

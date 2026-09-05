@@ -22,8 +22,13 @@ from razorpay_agent.decision import (
     DiscountArm,
     LinUCBPolicy,
 )
+from razorpay_agent.decision.co_purchase_graph import CoPurchaseGraph
 from razorpay_agent.eval.storage import EvalStore
 from razorpay_agent.gate import RulePolicyGateConfig
+from razorpay_agent.reasoning.agent import ReasoningAgent
+from razorpay_agent.reasoning.llm import resolve_provider
+from razorpay_agent.reasoning.store import ReasoningStore
+from razorpay_agent.reasoning.tools import ReasoningDeps
 
 DEFAULT_DB_PATH = "demo/live.sqlite3"
 ENV_PATH = ".env"
@@ -36,7 +41,7 @@ DEFAULT_BASELINE_COMPLIANCE = 0.85
 LIVE_DISCOUNT_ARMS = (5.0, 10.0, 15.0, 20.0, 25.0, 35.0, 40.0)
 LIVE_BUNDLE_ITEMS: dict[str, tuple[str, float]] = {
     "sku-socks": ("apparel", 499.0),
-    "sku-charger": ("electronics", 1499.0),
+    "sku-mug": ("home", 599.0),
 }
 FALLBACK_ITEM = "sku-socks"
 
@@ -68,6 +73,17 @@ def build_payment_provider(
     file_values: dict[str, str] | None = None,
 ) -> tuple[PaymentProvider, bool]:
     file_values = file_values if file_values is not None else load_env_file()
+    
+    # Only use live Razorpay if explicitly opted in
+    use_live = os.environ.get("RAZORPAY_AGENT_USE_LIVE_PAYMENTS", "").strip() in ("1", "true", "yes")
+    if not use_live:
+        if file_values.get("RAZORPAY_KEY_ID"):
+            print(
+                "[razorpay-agent] Using SCRIPTED payment provider (set RAZORPAY_AGENT_USE_LIVE_PAYMENTS=1 for live Razorpay)",
+                file=sys.stderr,
+            )
+        return ScriptedPaymentProvider(), False
+    
     key_id = _credential("RAZORPAY_KEY_ID", file_values)
     key_secret = _credential("RAZORPAY_KEY_SECRET", file_values)
     if key_id and key_secret:
@@ -216,6 +232,26 @@ def build_live_app(
 
     audit_store = AuditStore(db_path)
     eval_store = EvalStore(db_path)
+
+    # Build the LLM reasoner: resolves provider from .env (nous/openai/anthropic/tencent/stub).
+    # Falls back to StubBackend if no key or SDK available — pipeline always runs.
+    llm_backend = resolve_provider()
+    print(
+        f"[razorpay-agent] LLM reasoner: {llm_backend.name}/{llm_backend.model}"
+    )
+    reasoning_store = ReasoningStore(db_path)
+    reasoning_deps = ReasoningDeps(
+        catalog=DEMO_CATALOG,
+        policy=policy,
+        gate_config=gate_config,
+        regimen_graph=CoPurchaseGraph.from_catalog(DEMO_CATALOG),
+    )
+    reasoning_agent = ReasoningAgent(
+        llm=llm_backend,
+        deps=reasoning_deps,
+        store=reasoning_store,
+    )
+
     pipeline = OfferPipeline(
         policy,
         gate_config,
@@ -224,6 +260,7 @@ def build_live_app(
         decision_log=eval_store,
         temperature=temperature,
         rng=rng,
+        reasoning_agent=reasoning_agent,
     )
     # Route the MerchantAgent decision flow through the LangGraph StateGraph
     # (thin wrapper; behaviour identical to the direct pipeline path).
@@ -239,7 +276,9 @@ def build_live_app(
         eval_store=eval_store,
         watchdog=watchdog,
         inventory=inventory,
+        audit_store=audit_store,
     )
     app.state.bandit_warm = is_warm
     app.state.watchdog = watchdog
+    app.state.pipeline = pipeline
     return app, audit_store, is_live

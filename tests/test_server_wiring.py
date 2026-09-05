@@ -30,6 +30,7 @@ class TestProviderSelection:
     def test_both_credentials_select_live_razorpay(self, monkeypatch):
         monkeypatch.delenv("RAZORPAY_KEY_ID", raising=False)
         monkeypatch.delenv("RAZORPAY_KEY_SECRET", raising=False)
+        monkeypatch.setenv("RAZORPAY_AGENT_USE_LIVE_PAYMENTS", "1")
         provider, is_live = build_payment_provider(
             {"RAZORPAY_KEY_ID": "rzp_test_x", "RAZORPAY_KEY_SECRET": "s3cr3t"}
         )
@@ -50,6 +51,7 @@ class TestProviderSelection:
     def test_environment_used_when_file_lacks_key(self, monkeypatch):
         monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_env")
         monkeypatch.setenv("RAZORPAY_KEY_SECRET", "env-secret")
+        monkeypatch.setenv("RAZORPAY_AGENT_USE_LIVE_PAYMENTS", "1")
         provider, is_live = build_payment_provider(file_values={})
         assert is_live is True
         assert isinstance(provider, RazorpayTestProvider)

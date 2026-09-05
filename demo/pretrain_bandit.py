@@ -37,10 +37,10 @@ def main() -> None:
     print(f"[pretrain] updates applied: {state['trained_sessions']}")
 
     print("\n[pretrain] sanity probe — what the warm policy proposes per context:")
-    for category, cart in (("apparel", 2499.0), ("electronics", 4999.0), ("apparel", 1200.0)):
+    for category, cart, sku in (("apparel", 2499.0, "sku-hoodie"), ("home", 1499.0, "sku-diffuser"), ("apparel", 1200.0, "sku-tee")):
         context = DecisionContext(
             session_id=f"probe-{category}-{cart}",
-            target_sku="sku-hoodie" if category == "apparel" else "sku-headphones",
+            target_sku=sku,
             item_category=category,
             cart_value_inr=cart,
             buyer_allowance_inr=50000.0,
