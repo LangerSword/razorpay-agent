@@ -12,6 +12,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from mangum import Mangum
+
 from razorpay_agent.server import build_serverless_app
 
 _byok_store: dict[str, dict] = {}
@@ -19,7 +21,7 @@ _byok_store: dict[str, dict] = {}
 _app, _, _ = build_serverless_app(byok_store=_byok_store)
 app = _app
 application = _app
-handler = _app
+handler = Mangum(_app, lifespan="off")
 
 # Serve static files from web/dist/ if they exist
 DIST_DIR = Path(__file__).parent.parent / "web" / "dist"
