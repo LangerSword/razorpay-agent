@@ -41,7 +41,7 @@ def make_session(repo: SessionRepository, index: int, category: str, cart_paise:
 def run_sessions(pipeline, repo, buyer_model, rng, start_index: int, count: int, runner):
     for offset in range(count):
         index = start_index + offset
-        category = rng.choice(("apparel", "electronics"))
+        category = rng.choice(("apparel", "home"))
         cart_rupees = rng.uniform(800.0, 5000.0)
         cart_paise = int(cart_rupees * 100)
 

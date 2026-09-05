@@ -48,7 +48,7 @@ def main() -> None:
     print(f"[offpolicy-demo] logging {args.sessions} real decisions through the live pipeline...")
     accepted = declined = rejected = 0
     for index in range(args.sessions):
-        category = rng.choice(("apparel", "electronics"))
+        category = rng.choice(("apparel", "home"))
         cart_rupees = rng.uniform(800.0, 5000.0)
         state = CheckoutSessionState(
             id=f"ope-{index}",

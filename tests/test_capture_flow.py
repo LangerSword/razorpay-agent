@@ -56,8 +56,9 @@ class FakeRazorpayClient:
         self.order = _OrderNamespace(self)
         self.payment_link = _PaymentLinkNamespace(self)
 
-    def mark_paid(self, link_id):
-        self.links[link_id]["status"] = "paid"
+    def mark_paid(self, order_id):
+        self.orders[order_id]["status"] = "paid"
+        self.orders[order_id]["amount_paid"] = self.orders[order_id].get("amount", 0)
 
 
 @pytest.fixture

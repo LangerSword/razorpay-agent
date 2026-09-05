@@ -218,20 +218,59 @@ def build_live_app(
     temperature: float = 0.0,
     rng: random.Random | None = None,
 ):
+    return _build_app_common(
+        db_path=db_path,
+        pretrained_bandit_path=pretrained_bandit_path,
+        temperature=temperature,
+        rng=rng,
+        use_db=True,
+    )
+
+
+def build_serverless_app(
+    pretrained_bandit_path: str | Path | None = PRETRAINED_BANDIT_PATH,
+    temperature: float = 0.0,
+    rng: random.Random | None = None,
+):
+    """Build app with in-memory stores for serverless (read-only FS)."""
+    return _build_app_common(
+        db_path=None,
+        pretrained_bandit_path=pretrained_bandit_path,
+        temperature=temperature,
+        rng=rng,
+        use_db=False,
+    )
+
+
+def _build_app_common(
+    db_path: str | Path | None,
+    pretrained_bandit_path: str | Path | None = PRETRAINED_BANDIT_PATH,
+    temperature: float = 0.0,
+    rng: random.Random | None = None,
+    use_db: bool = True,
+):
     provider, is_live = build_payment_provider()
 
     policy, is_warm = build_policy(pretrained_bandit_path)
     policy = maybe_sabotage(policy)
 
-    watchdog, _ = build_watchdog(db_path)
+    watchdog = None
+    if use_db and db_path is not None:
+        watchdog, _ = build_watchdog(db_path)
 
     gate_config = RulePolicyGateConfig(
         fallback_bundle_item=FALLBACK_ITEM,
         fallback_bundle_price=LIVE_BUNDLE_ITEMS[FALLBACK_ITEM][1],
     )
 
-    audit_store = AuditStore(db_path)
-    eval_store = EvalStore(db_path)
+    if use_db and db_path is not None:
+        audit_store = AuditStore(db_path)
+        eval_store = EvalStore(db_path)
+        reasoning_store = ReasoningStore(db_path)
+    else:
+        audit_store = AuditStore(":memory:")
+        eval_store = EvalStore(":memory:")
+        reasoning_store = ReasoningStore(":memory:")
 
     # Build the LLM reasoner: resolves provider from .env (nous/openai/anthropic/tencent/stub).
     # Falls back to StubBackend if no key or SDK available — pipeline always runs.
@@ -239,7 +278,7 @@ def build_live_app(
     print(
         f"[razorpay-agent] LLM reasoner: {llm_backend.name}/{llm_backend.model}"
     )
-    reasoning_store = ReasoningStore(db_path)
+
     reasoning_deps = ReasoningDeps(
         catalog=DEMO_CATALOG,
         policy=policy,
@@ -262,8 +301,6 @@ def build_live_app(
         rng=rng,
         reasoning_agent=reasoning_agent,
     )
-    # Route the MerchantAgent decision flow through the LangGraph StateGraph
-    # (thin wrapper; behaviour identical to the direct pipeline path).
     pipeline.attach_graph()
 
     inventory = InventoryStore.from_catalog(DEMO_CATALOG)
