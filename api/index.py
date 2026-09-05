@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
+
+# Add src/ to path for Vercel's Python runtime
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fastapi import HTTPException
 
 from razorpay_agent.server import build_serverless_app
 
-# BYOK key store: deployment-scoped, in-memory only.
-# - Never written to disk (no .env, no sqlite)
-# - Never logged (masked as sk-...abcd)
-# - Cleared on redeploy (serverless cold start)
 _byok_store: dict[str, dict] = {}
 
 _app, _, _ = build_serverless_app(byok_store=_byok_store)
@@ -28,7 +28,6 @@ def mask_key(key: str) -> str:
 
 @app.post("/api/settings/llm")
 async def set_llm_settings(request: Any) -> dict:
-    """Set runtime BYOK settings. Stored in-memory only, never persisted."""
     from fastapi import Request as _Request
     if not isinstance(request, _Request):
         raise HTTPException(400, "invalid request")
@@ -71,7 +70,6 @@ async def set_llm_settings(request: Any) -> dict:
 
 @app.get("/api/settings/llm")
 async def get_llm_settings() -> dict:
-    """Return current BYOK status (masked key only)."""
     provider = _byok_store.get("provider", os.environ.get("RAZORPAY_AGENT_LLM_PROVIDER", "stub"))
     api_key = _byok_store.get("api_key", "")
     return {
@@ -83,7 +81,6 @@ async def get_llm_settings() -> dict:
 
 @app.delete("/api/settings/llm")
 async def clear_llm_settings() -> dict:
-    """Clear BYOK settings, fall back to stub."""
     _byok_store.clear()
     for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "NOUS_PORTAL_API_KEY", "TENCENT_HY3_API_KEY"]:
         os.environ.pop(key, None)
