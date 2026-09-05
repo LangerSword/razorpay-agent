@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>razorpay-agent · Checkout</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0a0c10; color: #e8eaed; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #12151b; border: 1px solid #252a34; border-radius: 12px; padding: 32px; max-width: 420px; width: 100%; text-align: center; }
+    .amount { font-size: 32px; font-weight: 800; color: #4a9eff; margin: 16px 0; }
+    .btn { display: inline-block; padding: 14px 28px; background: #4a9eff; color: #000; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 16px; }
+    .btn:hover { filter: brightness(1.1); }
+    .items { text-align: left; margin: 16px 0; padding: 12px; background: #1a1e26; border-radius: 8px; }
+    .item { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+    .status { margin-top: 16px; padding: 12px; border-radius: 8px; font-weight: 600; display: none; }
+    .status.success { background: rgba(74,222,128,0.15); color: #4ade80; display: block; }
+    .status.error { background: rgba(248,113,113,0.15); color: #f87171; display: block; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div style="font-size: 14px; color: #7a8090;">General Goods Co.</div>
+    <div class="amount" id="amount">₹0.00</div>
+    <div class="items" id="items"></div>
+    <button class="btn" id="payBtn" onclick="payNow()">Pay with Razorpay</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script>
+    // Get order details from URL params
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get('order_id');
+    const keyId = params.get('key_id');
+    const amount = params.get('amount');
+    const items = JSON.parse(params.get('items') || '[]');
+
+    document.getElementById('amount').textContent = '₹' + (amount / 100).toFixed(2);
+    document.getElementById('items').innerHTML = items.map(i =>
+      `<div class="item"><span>${i.title}</span><span>₹${(i.price/100).toFixed(0)}</span></div>`
+    ).join('');
+
+    function payNow() {
+      const btn = document.getElementById('payBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Opening checkout...';
+
+      const options = {
+        key: keyId,
+        amount: amount,
+        currency: 'INR',
+        name: 'General Goods Co.',
+        description: items.map(i => i.title).join(', '),
+        order_id: orderId,
+        handler: function(response) {
+          document.getElementById('status').className = 'status success';
+          document.getElementById('status').textContent = '✅ Payment successful! Payment ID: ' + response.razorpay_payment_id;
+          btn.textContent = 'Paid ✓';
+          btn.style.background = '#4ade80';
+
+          // Notify parent window (if in iframe) or update session
+          fetch('/api/webhook/razorpay', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              event: 'payment.captured',
+              payload: {
+                payment: {
+                  entity: {
+                    id: response.razorpay_payment_id,
+                    order_id: response.razorpay_order_id,
+                    status: 'captured',
+                    amount: amount
+                  }
+                }
+              }
+            })
+          });
+        },
+        prefill: {
+          email: 'test@example.com',
+          contact: '+919999999999'
+        },
+        theme: { color: '#4a9eff' },
+        modal: {
+          ondismiss: function() {
+            document.getElementById('status').className = 'status error';
+            document.getElementById('status').textContent = 'Payment cancelled';
+            btn.disabled = false;
+            btn.textContent = 'Pay with Razorpay';
+          }
+        }
+      };
+
+      const rzp = new Razorpay(options);
+      rzp.open();
+    }
+  </script>
+</body>
+</html>

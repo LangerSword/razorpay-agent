@@ -8,6 +8,7 @@ import MainContent from './components/MainContent'
 import Sidebar from './components/Sidebar'
 import CartPanel from './components/CartPanel'
 import ProductModal from './components/ProductModal'
+import SettingsPanel from './components/SettingsPanel'
 import Toast from './components/Toast'
 
 export default function App() {
@@ -73,6 +74,9 @@ export default function App() {
       </div>
       <CartPanel />
       <ProductModal />
+      {state.settingsOpen && (
+        <SettingsPanel onClose={() => dispatch({ type: 'SET_SETTINGS_OPEN', open: false })} />
+      )}
       <Toast />
     </>
   )

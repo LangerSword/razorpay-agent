@@ -1,5 +1,12 @@
 import { createContext, useContext, useReducer, useCallback, useRef, ReactNode } from 'react'
-import type { AppState, Action, Product, CartItem } from '../types'
+import type { AppState, Action, Product, CartItem, Settings } from '../types'
+
+const defaultSettings: Settings = {
+  provider: 'openai',
+  apiKey: '',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+}
 
 const initialState: AppState = {
   products: [],
@@ -16,6 +23,8 @@ const initialState: AppState = {
   cartOpen: false,
   modalProduct: null,
   activeFilter: 'all',
+  settings: defaultSettings,
+  settingsOpen: false,
 }
 
 function reducer(state: AppState, action: Action): AppState {
@@ -44,6 +53,10 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, modalProduct: action.product }
     case 'SET_FILTER':
       return { ...state, activeFilter: action.filter }
+    case 'SET_SETTINGS':
+      return { ...state, settings: action.settings }
+    case 'SET_SETTINGS_OPEN':
+      return { ...state, settingsOpen: action.open }
     case 'RESET':
       return { ...initialState }
     default:

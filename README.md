@@ -181,6 +181,26 @@ python run_server.py
 | `RAZORPAY_KEY_SECRET` | No | — | Razorpay secret |
 | `RAZORPAY_AGENT_LLM_PROVIDER` | No | `stub` | `stub`, `openai`, `anthropic`, `nous` |
 
+## BYOK (Bring Your Own Key)
+
+Want real LLM-powered agents instead of the scripted fallback? Plug your own API key:
+
+1. Click **Settings** (gear icon) in the top-right corner
+2. Select your provider (OpenAI, Anthropic, Nous Portal, or Custom)
+3. Enter your API key
+4. Click **Save Settings**
+
+Your key is stored **locally in your browser** — never sent to our servers. It's included with each request to power the buyer and merchant agents. Without a key, agents use a built-in scripted fallback so the demo always works.
+
+### Supported Providers
+
+| Provider | Base URL | Default Model |
+|----------|----------|---------------|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| Anthropic | `https://api.anthropic.com/v1` | `claude-sonnet-4-20250514` |
+| Nous Portal | `https://portal.nousresearch.com/api` | `Hermes-3-Llama-3.1-405B` |
+| Custom | Any OpenAI-compatible endpoint | Any model |
+
 ---
 
 ## Project Structure

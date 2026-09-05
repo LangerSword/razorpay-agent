@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>razorpay-agent · AI Demo</title>
+  <style>
+    :root {
+      --bg: #0a0c10; --surface: #12151b; --surface2: #1a1e26; --ink: #e8eaed;
+      --muted: #7a8090; --accent: #4a9eff; --buyer: #4a9eff; --merchant: #f0a040;
+      --green: #4ade80; --red: #f87171; --border: #252a34;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; }
+
+    .app { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+    .stage { overflow-y: auto; padding: 24px; }
+    .sidebar { background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; }
+
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+    .logo { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+    .logo span { color: var(--accent); }
+    .header-meta { text-align: right; }
+    .header-meta .mode { font-size: 12px; color: var(--green); font-weight: 600; }
+    .header-meta .ts { font-size: 11px; color: var(--muted); }
+
+    .phases { display: flex; gap: 8px; margin-bottom: 24px; }
+    .phase { flex: 1; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); transition: all 0.3s; }
+    .phase.active { border-color: var(--accent); color: var(--accent); background: rgba(74,158,255,0.1); }
+    .phase.done { border-color: var(--green); color: var(--green); }
+    .phase .icon { font-size: 18px; margin-bottom: 4px; }
+    .phase .label { font-size: 11px; }
+
+    .agents { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .agent-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; position: relative; overflow: hidden; }
+    .agent-card.buyer { border-left: 3px solid var(--buyer); }
+    .agent-card.merchant { border-left: 3px solid var(--merchant); }
+    .agent-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; opacity: 0; transition: opacity 0.3s; }
+    .agent-card.thinking::before { opacity: 1; animation: pulse-bar 1s infinite; }
+    .agent-card.buyer.thinking::before { background: var(--buyer); }
+    .agent-card.merchant.thinking::before { background: var(--merchant); }
+    @keyframes pulse-bar { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+    .agent-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .agent-avatar { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .buyer .agent-avatar { background: rgba(74,158,255,0.15); }
+    .merchant .agent-avatar { background: rgba(240,160,64,0.15); }
+    .agent-name { font-size: 14px; font-weight: 700; }
+    .agent-role { font-size: 11px; color: var(--muted); }
+    .agent-status { margin-left: auto; font-size: 11px; padding: 4px 8px; border-radius: 4px; font-weight: 600; }
+    .agent-status.idle { background: var(--surface2); color: var(--muted); }
+    .agent-status.active { background: rgba(74,222,128,0.15); color: var(--green); }
+    .agent-status.waiting { background: rgba(240,160,64,0.15); color: var(--merchant); }
+
+    .agent-thought { font-size: 13px; line-height: 1.5; color: var(--ink); min-height: 40px; }
+    .agent-thought.empty { color: var(--muted); font-style: italic; }
+
+    .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 12px; }
+    .products { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .product { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; transition: all 0.3s; position: relative; }
+    .product.considering { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(74,158,255,0.2); }
+    .product.added { border-color: var(--green); background: rgba(74,222,128,0.05); }
+    .product.skipped { opacity: 0.5; }
+    .product .cat { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 4px; }
+    .product .name { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+    .product .price { font-size: 16px; font-weight: 700; color: var(--ink); }
+    .product .badge { position: absolute; top: 8px; right: 8px; font-size: 10px; padding: 3px 6px; border-radius: 4px; font-weight: 600; }
+    .product .badge.added { background: var(--green); color: #000; }
+    .product .badge.skipped { background: var(--red); color: #000; }
+    .product .reason { font-size: 11px; color: var(--muted); margin-top: 8px; font-style: italic; }
+
+    .cart { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 24px; }
+    .cart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .cart-title { font-size: 14px; font-weight: 700; }
+    .cart-total { font-size: 14px; font-weight: 700; color: var(--accent); }
+    .cart-items { display: flex; flex-direction: column; gap: 8px; }
+    .cart-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--surface2); border-radius: 6px; font-size: 13px; }
+    .cart-empty { font-size: 13px; color: var(--muted); text-align: center; padding: 20px; }
+
+    .offer { background: linear-gradient(135deg, rgba(240,160,64,0.1), rgba(74,158,255,0.1)); border: 1px solid var(--merchant); border-radius: 12px; padding: 16px; margin-bottom: 24px; }
+    .offer-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .offer-title { font-size: 14px; font-weight: 700; }
+    .offer-detail { font-size: 13px; color: var(--muted); }
+    .offer-verdict { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-top: 8px; }
+    .offer-verdict.APPROVE { background: var(--green); color: #000; }
+    .offer-verdict.REJECT { background: var(--red); color: #000; }
+    .offer-verdict.REVIEW { background: var(--merchant); color: #000; }
+
+    .payment { background: var(--surface); border: 1px solid var(--accent); border-radius: 12px; padding: 20px; margin-bottom: 24px; text-align: center; }
+    .payment-icon { font-size: 32px; margin-bottom: 8px; }
+    .payment-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .payment-amount { font-size: 24px; font-weight: 800; color: var(--accent); margin-bottom: 12px; }
+    .payment-link { display: inline-block; padding: 10px 20px; background: var(--accent); color: #000; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+    .payment-status { font-size: 12px; font-weight: 600; }
+    .payment-status.paid { color: var(--green); }
+    .payment-status.failed { color: var(--red); }
+    .payment-status.pending { color: var(--merchant); }
+
+    .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
+    .sidebar-title { font-size: 14px; font-weight: 700; }
+    .sidebar-subtitle { font-size: 11px; color: var(--muted); }
+    .sidebar-body { flex: 1; overflow-y: auto; padding: 16px; }
+
+    .controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+    .control-row { display: flex; flex-direction: column; gap: 4px; }
+    .control-row label { font-size: 11px; color: var(--muted); font-weight: 600; }
+    .control-row input, .control-row select { padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--ink); font-size: 13px; }
+    .control-row input:focus, .control-row select:focus { outline: none; border-color: var(--accent); }
+    .control-check { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+
+    .btn { padding: 10px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; width: 100%; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #000; }
+    .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
+    .btn-success { background: var(--green); color: #000; }
+    .btn-danger { background: var(--surface2); color: var(--red); border: 1px solid var(--red); }
+
+    .log { font-family: 'SF Mono', Monaco, monospace; font-size: 11px; line-height: 1.6; }
+    .log-entry { padding: 6px 0; border-bottom: 1px solid var(--border); }
+    .log-entry:last-child { border-bottom: none; }
+    .log-entry .time { color: var(--muted); margin-right: 8px; }
+    .log-entry.buyer { color: var(--buyer); }
+    .log-entry.merchant { color: var(--merchant); }
+    .log-entry.system { color: var(--muted); }
+
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+    .empty-state .title { font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+    .empty-state .desc { font-size: 13px; line-height: 1.5; }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+    }
+
+    /* Cursor animation */
+    .cursor {
+      position: fixed;
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
+      z-index: 9999;
+      transition: all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .cursor::before {
+      content: '';
+      position: absolute;
+      width: 0;
+      height: 0;
+      border-left: 10px solid var(--accent);
+      border-top: 6px solid transparent;
+      border-bottom: 6px solid transparent;
+      transform: rotate(-15deg);
+      filter: drop-shadow(0 0 4px var(--accent));
+    }
+    .cursor.clicking::after {
+      content: '';
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      animation: click-ring 0.4s ease-out;
+    }
+    @keyframes click-ring {
+      0% { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
+
+    .typing-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: var(--accent);
+      animation: blink 0.8s infinite;
+      vertical-align: middle;
+      margin-left: 2px;
+    }
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="cursor" id="cursor"></div>
+  <div class="app">
+    <div class="stage">
+      <div class="header">
+        <div class="logo">razorpay<span>agent</span> · General Goods Co.</div>
+        <div class="header-meta">
+          <div class="mode" id="mode">● DEMO MODE</div>
+          <div class="ts" id="ts">--:--:--</div>
+        </div>
+      </div>
+
+      <div class="phases">
+        <div class="phase" id="phase-1"><div class="icon">🏪</div><div class="label">Discovery</div></div>
+        <div class="phase" id="phase-2"><div class="icon">🛒</div><div class="label">Browsing</div></div>
+        <div class="phase" id="phase-3"><div class="icon">🤝</div><div class="label">Negotiation</div></div>
+        <div class="phase" id="phase-4"><div class="icon">💳</div><div class="label">Checkout</div></div>
+        <div class="phase" id="phase-5"><div class="icon">✅</div><div class="label">Done</div></div>
+      </div>
+
+      <div class="agents">
+        <div class="agent-card buyer" id="buyer-card">
+          <div class="agent-header">
+            <div class="agent-avatar">🛒</div>
+            <div>
+              <div class="agent-name" id="buyer-name">AutoBuyer</div>
+              <div class="agent-role">AI Buyer Agent</div>
+            </div>
+            <div class="agent-status idle" id="buyer-status">IDLE</div>
+          </div>
+          <div class="agent-thought empty" id="buyer-thought">Waiting to start…</div>
+        </div>
+        <div class="agent-card merchant" id="merchant-card">
+          <div class="agent-header">
+            <div class="agent-avatar">🏪</div>
+            <div>
+              <div class="agent-name" id="merchant-name">MerchantAgent</div>
+              <div class="agent-role">AI Merchant · LinUCB + LLM</div>
+            </div>
+            <div class="agent-status idle" id="merchant-status">IDLE</div>
+          </div>
+          <div class="agent-thought empty" id="merchant-thought">Waiting for buyer…</div>
+        </div>
+      </div>
+
+      <div id="content">
+        <div class="empty-state">
+          <div class="icon">🤖</div>
+          <div class="title">Ready to demonstrate dual-agent AI commerce</div>
+          <div class="desc">Configure your buyer in the sidebar and click Start.<br>The buyer shops, the merchant negotiates, Razorpay settles.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Agent Panel</div>
+        <div class="sidebar-subtitle">Configure & control the demo</div>
+      </div>
+      <div class="sidebar-body">
+        <div class="controls">
+          <div class="control-row">
+            <label>Buyer Interests</label>
+            <input type="text" id="interests" placeholder="apparel, kitchen, home" value="home, kitchen" />
+          </div>
+          <div class="control-row">
+            <label>Budget (₹)</label>
+            <input type="number" id="budget" value="10000" min="1000" step="500" />
+          </div>
+          <div class="control-row">
+            <label>Patience</label>
+            <input type="number" id="patience" value="8" min="3" max="15" step="1" />
+          </div>
+          <div class="control-row">
+            <label>Min Discount (%)</label>
+            <input type="number" id="minDiscount" value="5" min="0" max="50" step="1" />
+          </div>
+          <div class="control-row">
+            <label>Shopping Style</label>
+            <select id="style">
+              <option value="analytical">Analytical — careful, compares</option>
+              <option value="casual">Casual — relaxed, practical</option>
+              <option value="aggressive">Aggressive — deal hunter</option>
+              <option value="passive">Passive — quick decisions</option>
+            </select>
+          </div>
+          <div class="control-check">
+            <input type="checkbox" id="failPaymentLink" />
+            <label for="failPaymentLink">Simulate payment link failure</label>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="startBtn" onclick="startDemo()">▶ Start Dual Agents</button>
+        <br>
+        <button class="btn btn-danger" onclick="resetDemo()" style="margin-top: 8px;">↺ Reset</button>
+
+        <div class="section-title" style="margin-top: 20px;">Event Log</div>
+        <div class="log" id="log">
+          <div class="log-entry system"><span class="time">--:--:--</span>System ready</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentPhase = 0;
+    let products = [];
+    let cart = [];
+    let running = false;
+    let curatedIds = [];
+
+    // Cursor control
+    const cursor = document.getElementById('cursor');
+    let cursorX = 100, cursorY = 100;
+
+    function moveCursorTo(x, y, duration = 800) {
+      return new Promise(resolve => {
+        cursor.style.transition = `all ${duration}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`;
+        cursor.style.left = x + 'px';
+        cursor.style.top = y + 'px';
+        cursorX = x;
+        cursorY = y;
+        setTimeout(resolve, duration);
+      });
+    }
+
+    async function clickAt(x, y) {
+      await moveCursorTo(x, y, 600);
+      await sleep(200);
+      cursor.classList.add('clicking');
+      await sleep(200);
+      cursor.classList.remove('clicking');
+      await sleep(200);
+    }
+
+    async function typeText(element, text, speed = 30) {
+      element.textContent = '';
+      element.classList.remove('empty');
+      for (let i = 0; i < text.length; i++) {
+        element.textContent += text[i];
+        await sleep(speed);
+      }
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function setPhase(n) {
+      currentPhase = n;
+      for (let i = 1; i <= 5; i++) {
+        const el = document.getElementById(`phase-${i}`);
+        el.classList.remove('active', 'done');
+        if (i < n) el.classList.add('done');
+        if (i === n) el.classList.add('active');
+      }
+    }
+
+    function setAgentThinking(agent, thinking) {
+      document.getElementById(`${agent}-card`).classList.toggle('thinking', thinking);
+    }
+
+    function setAgentThought(agent, text) {
+      const el = document.getElementById(`${agent}-thought`);
+      el.textContent = text;
+      el.classList.remove('empty');
+    }
+
+    function setAgentStatus(agent, status, label) {
+      const el = document.getElementById(`${agent}-status`);
+      el.className = 'agent-status ' + status;
+      el.textContent = label;
+    }
+
+    function log(msg, type) {
+      const el = document.getElementById('log');
+      const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.innerHTML = `<span class="time">${now}</span>${msg}`;
+      el.appendChild(entry);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function updateTs() {
+      document.getElementById('ts').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
+    }
+    setInterval(updateTs, 1000);
+
+    function resetDemo() {
+      running = false;
+      products = [];
+      cart = [];
+      curatedIds = [];
+      currentPhase = 0;
+      document.getElementById('content').innerHTML = `
+        <div class="empty-state">
+          <div class="icon">🤖</div>
+          <div class="title">Ready to demonstrate dual-agent AI commerce</div>
+          <div class="desc">Configure your buyer in the sidebar and click Start.<br>The buyer shops, the merchant negotiates, Razorpay settles.</div>
+        </div>`;
+      for (let i = 1; i <= 5; i++) {
+        document.getElementById(`phase-${i}`).classList.remove('active', 'done');
+      }
+      setAgentThought('buyer', 'Waiting to start…');
+      setAgentThought('merchant', 'Waiting for buyer…');
+      setAgentStatus('buyer', 'idle', 'IDLE');
+      setAgentStatus('merchant', 'idle', 'IDLE');
+      setAgentThinking('buyer', false);
+      setAgentThinking('merchant', false);
+      document.getElementById('log').innerHTML = '<div class="log-entry system"><span class="time">--:--:--</span>System ready</div>';
+      document.getElementById('startBtn').disabled = false;
+    }
+
+    async function startDemo() {
+      if (running) return;
+      running = true;
+
+      const interests = document.getElementById('interests').value;
+      const budget = parseInt(document.getElementById('budget').value);
+      const patience = parseInt(document.getElementById('patience').value);
+      const minDiscount = parseFloat(document.getElementById('minDiscount').value);
+      const style = document.getElementById('style').value;
+      const failPaymentLink = document.getElementById('failPaymentLink').checked;
+
+      document.getElementById('startBtn').disabled = true;
+
+      try {
+        // Phase 1: Discovery — Shop Assistant
+        setPhase(1);
+        setAgentThinking('merchant', true);
+        setAgentStatus('merchant', 'active', 'ACTING');
+        setAgentThought('merchant', 'Curating products based on buyer interests...');
+        log(`Shop assistant: greeting buyer (interests: ${interests})`, 'merchant');
+
+        // Move cursor to interests field
+        const interestsField = document.getElementById('interests');
+        const interestsRect = interestsField.getBoundingClientRect();
+        await clickAt(interestsRect.left + interestsRect.width / 2, interestsRect.top + interestsRect.height / 2);
+        await sleep(500);
+
+        const greetRes = await fetch('/api/shop/greet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ interests: interests.split(',').map(s => s.trim()), budget, style }),
+        });
+
+        if (!greetRes.ok) throw new Error('Shop greeting failed');
+        const greetData = await greetRes.json();
+
+        setAgentThinking('merchant', false);
+        setAgentThought('merchant', greetData.greeting || 'Welcome!');
+        log(`Shop assistant: ${greetData.greeting}`, 'merchant');
+
+        if (greetData.recommendations && greetData.recommendations.length > 0) {
+          products = greetData.recommendations;
+          curatedIds = products.map(p => p.id);
+          renderProducts();
+        }
+
+        // Phase 2: Browsing — Buyer evaluates
+        await sleep(1500);
+        setPhase(2);
+        setAgentStatus('buyer', 'active', 'SHOPPING');
+        setAgentStatus('merchant', 'idle', 'WAITING');
+
+        // Move cursor to Start button area (now disabled)
+        const startBtn = document.getElementById('startBtn');
+        const startRect = startBtn.getBoundingClientRect();
+        await moveCursorTo(startRect.left + startRect.width / 2, startRect.top + startRect.height / 2);
+        await sleep(500);
+
+        const startRes = await fetch('/api/autonomous/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            interests, budget, min_discount: minDiscount,
+            style, fail_payment_link: failPaymentLink,
+            curated_ids: curatedIds.join(',')
+          }),
+        });
+
+        if (!startRes.ok) throw new Error('Failed to start agents');
+
+        await pollBuyerMessages(budget, minDiscount, style);
+
+        setPhase(5);
+        setAgentStatus('buyer', 'idle', 'DONE');
+        setAgentStatus('merchant', 'idle', 'DONE');
+
+      } catch (err) {
+        log(`Error: ${err.message}`, 'system');
+        setAgentThought('buyer', `Error: ${err.message}`);
+        running = false;
+        document.getElementById('startBtn').disabled = false;
+      }
+    }
+
+    async function pollBuyerMessages(budget, minDiscount, style) {
+      let lastCount = 0;
+      let checkoutSeen = false;
+      let doneSeen = false;
+      const startTime = Date.now();
+      const maxTime = 120000;
+
+      while (!doneSeen && Date.now() - startTime < maxTime) {
+        try {
+          const res = await fetch('/api/buyer-messages?limit=50');
+          if (!res.ok) { await sleep(1000); continue; }
+          const data = await res.json();
+          const messages = data.messages || [];
+
+          for (let i = lastCount; i < messages.length; i++) {
+            await processBuyerMessage(messages[i].message, budget, style);
+          }
+          lastCount = messages.length;
+
+          for (const msg of messages) {
+            if (msg.message.includes('🏁 Complete') || msg.message.includes('🏁 No items')) {
+              doneSeen = true;
+            }
+            if (msg.message.includes('Checking out') && !checkoutSeen) {
+              checkoutSeen = true;
+            }
+          }
+
+          if (doneSeen) break;
+        } catch (err) {}
+        await sleep(1500);
+      }
+    }
+
+    async function processBuyerMessage(msg, budget, style) {
+      const evalMatch = msg.match(/💭\s*(.+)/);
+      if (evalMatch && msg.length > 20) {
+        setAgentThinking('buyer', true);
+        setAgentStatus('buyer', 'active', 'EVALUATING');
+        // Show typing effect
+        const thoughtEl = document.getElementById('buyer-thought');
+        thoughtEl.classList.remove('empty');
+        await typeText(thoughtEl, evalMatch[1].substring(0, 100), 20);
+        log(`Buyer: ${evalMatch[1].substring(0, 80)}...`, 'buyer');
+        return;
+      }
+
+      if (msg.includes('🛍️ Added')) {
+        const itemName = msg.split('Added ')[1]?.split(' to cart')[0];
+        if (itemName) {
+          const product = products.find(p => p.title === itemName);
+          cart.push({ name: itemName, price: product ? product.price_inr : 0 });
+          updateCart();
+          markProduct(itemName, 'added');
+          setAgentStatus('buyer', 'active', 'SHOPPING');
+          log(`Added: ${itemName}`, 'buyer');
+
+          // Move cursor to the product card
+          const productCards = document.querySelectorAll('.product');
+          for (const card of productCards) {
+            if (card.querySelector('.name')?.textContent === itemName) {
+              const rect = card.getBoundingClientRect();
+              await moveCursorTo(rect.left + rect.width / 2, rect.top + rect.height / 2);
+              break;
+            }
+          }
+        }
+        return;
+      }
+
+      if (msg.includes('❌ Skipping')) {
+        const itemName = msg.split('Skipping ')[1];
+        if (itemName) {
+          markProduct(itemName, 'skipped');
+          log(`Skipped: ${itemName}`, 'buyer');
+        }
+        return;
+      }
+
+      if (msg.includes('📋')) {
+        log(msg, 'buyer');
+        return;
+      }
+
+      if (msg.includes('Reached patience limit')) {
+        setAgentStatus('buyer', 'waiting', 'DECIDING');
+        log('Buyer: reached patience limit, proceeding to checkout', 'buyer');
+        return;
+      }
+
+      if (msg.includes('Checking out')) {
+        const items = msg.split(': ')[1] || '';
+        log(`Checkout: ${items}`, 'buyer');
+        setPhase(3);
+        setAgentThinking('merchant', true);
+        setAgentStatus('merchant', 'active', 'NEGOTIATING');
+        setAgentThought('merchant', 'Evaluating cart... proposing offer...');
+        return;
+      }
+
+      if (msg.includes('Session created')) {
+        const sessionId = msg.split(': ')[1];
+        log(`Session: ${sessionId}`, 'system');
+        setPhase(4);
+        return;
+      }
+
+      if (msg.includes('Payment link:')) {
+        const url = msg.split('Payment link: ')[1];
+        log(`Payment link created`, 'system');
+        showPaymentLink(url);
+        return;
+      }
+
+      if (msg.includes('Failed to create payment link')) {
+        log('Payment link creation FAILED', 'system');
+        showPaymentFailed();
+        return;
+      }
+
+      if (msg.includes('🏁 Complete') || msg.includes('🏁 No items')) {
+        setAgentThinking('buyer', false);
+        setAgentThought('buyer', msg);
+        log(msg, 'buyer');
+        return;
+      }
+    }
+
+    function renderProducts() {
+      const el = document.getElementById('content');
+      el.innerHTML = `
+        <div class="section-title">Curated for you</div>
+        <div class="products" id="products-grid"></div>
+        <div class="cart" id="cart-section" style="display:none;">
+          <div class="cart-header">
+            <div class="cart-title">🛒 Cart</div>
+            <div class="cart-total" id="cart-total">₹0</div>
+          </div>
+          <div class="cart-items" id="cart-items"></div>
+        </div>
+      `;
+      const grid = document.getElementById('products-grid');
+      grid.innerHTML = products.map((p, i) => `
+        <div class="product" id="product-${p.id}">
+          <div class="cat">${p.category}</div>
+          <div class="name">${p.title}</div>
+          <div class="price">₹${p.price_inr.toFixed(0)}</div>
+          ${p.reason ? `<div class="reason">${p.reason.substring(0, 60)}…</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function markProduct(name, action) {
+      const grid = document.getElementById('products-grid');
+      if (!grid) return;
+      const cards = grid.querySelectorAll('.product');
+      cards.forEach(card => {
+        const cardName = card.querySelector('.name')?.textContent;
+        if (cardName === name) {
+          card.classList.add(action);
+          const badge = document.createElement('div');
+          badge.className = `badge ${action}`;
+          badge.textContent = action === 'added' ? '✓ ADDED' : '✗ SKIP';
+          card.appendChild(badge);
+        }
+      });
+    }
+
+    function updateCart() {
+      const section = document.getElementById('cart-section');
+      const items = document.getElementById('cart-items');
+      const total = document.getElementById('cart-total');
+      if (!section || !items) return;
+      section.style.display = 'block';
+      items.innerHTML = cart.map(item => `
+        <div class="cart-item">
+          <span class="item-name">${item.name}</span>
+          <span class="item-price">₹${item.price.toFixed(0)}</span>
+        </div>
+      `).join('');
+      const totalAmt = cart.reduce((s, i) => s + i.price, 0);
+      total.textContent = `₹${totalAmt.toLocaleString('en-IN')}`;
+    }
+
+    function showPaymentLink(url) {
+      const el = document.getElementById('content');
+      const total = cart.reduce((s, i) => s + i.price, 0);
+      el.innerHTML = `
+        <div class="payment">
+          <div class="payment-icon">🔗</div>
+          <div class="payment-title">Payment Link Created</div>
+          <div class="payment-amount">₹${total.toLocaleString('en-IN')}</div>
+          <a href="${url}" target="_blank" class="payment-link" id="payLink">Pay via Razorpay (Test)</a>
+          <div class="payment-status pending" id="payStatus">⏳ Waiting for payment...</div>
+        </div>
+      `;
+
+      // Animate cursor to click the pay link
+      setTimeout(async () => {
+        const payLink = document.getElementById('payLink');
+        if (payLink) {
+          const rect = payLink.getBoundingClientRect();
+          await clickAt(rect.left + rect.width / 2, rect.top + rect.height / 2);
+          document.getElementById('payStatus').textContent = '✅ Payment completed!';
+          document.getElementById('payStatus').className = 'payment-status paid';
+        }
+      }, 1000);
+    }
+
+    function showPaymentFailed() {
+      const el = document.getElementById('content');
+      el.innerHTML = `
+        <div class="payment" style="border-color: var(--red);">
+          <div class="payment-icon">❌</div>
+          <div class="payment-title">Payment Link Failed</div>
+          <div class="payment-status failed">Gateway timeout — merchant could not create payment link</div>
+          <div style="margin-top: 12px; font-size: 13px; color: var(--muted);">This demonstrates graceful failure handling. The session is preserved for retry.</div>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>

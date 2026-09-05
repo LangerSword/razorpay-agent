@@ -26,6 +26,13 @@ export interface BuyerMessage {
 
 export type AgentStatus = 'idle' | 'active' | 'waiting'
 
+export interface Settings {
+  provider: string
+  apiKey: string
+  baseUrl: string
+  model: string
+}
+
 export interface AppState {
   products: Product[]
   cart: CartItem[]
@@ -41,6 +48,8 @@ export interface AppState {
   cartOpen: boolean
   modalProduct: Product | null
   activeFilter: string
+  settings: Settings
+  settingsOpen: boolean
 }
 
 export interface LogEntry {
@@ -62,4 +71,6 @@ export type Action =
   | { type: 'SET_CART_OPEN'; open: boolean }
   | { type: 'SET_MODAL_PRODUCT'; product: Product | null }
   | { type: 'SET_FILTER'; filter: string }
+  | { type: 'SET_SETTINGS'; settings: Settings }
+  | { type: 'SET_SETTINGS_OPEN'; open: boolean }
   | { type: 'RESET' }
