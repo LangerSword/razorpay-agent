@@ -33,6 +33,14 @@ export interface Settings {
   model: string
 }
 
+export interface PaymentLink {
+  id: string
+  url: string
+  status: string
+  amount_paise: number
+  session_id: string
+}
+
 export interface AppState {
   products: Product[]
   cart: CartItem[]
@@ -50,6 +58,7 @@ export interface AppState {
   activeFilter: string
   settings: Settings
   settingsOpen: boolean
+  paymentLink: PaymentLink | null
 }
 
 export interface LogEntry {
@@ -73,4 +82,5 @@ export type Action =
   | { type: 'SET_FILTER'; filter: string }
   | { type: 'SET_SETTINGS'; settings: Settings }
   | { type: 'SET_SETTINGS_OPEN'; open: boolean }
+  | { type: 'SET_PAYMENT_LINK'; paymentLink: PaymentLink | null }
   | { type: 'RESET' }

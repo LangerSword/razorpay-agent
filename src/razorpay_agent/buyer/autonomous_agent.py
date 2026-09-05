@@ -371,7 +371,8 @@ Use tools to check your budget and purchase history, then decide: ADD_TO_CART or
         if self._personality.demo_auto_pay:
             self._note("🤖 Auto-paying via test API — no action needed")
         else:
-            url = link_data.get('url', '')
+            # Prefer razorpay_url for modal, fallback to internal checkout
+            url = link_data.get('razorpay_url') or link_data.get('url', '')
             self._note(f"🔗 Payment link: {url}")
         
         if 'session_id' not in self._payment_link:

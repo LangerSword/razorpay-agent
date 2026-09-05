@@ -70,6 +70,15 @@ export default function Sidebar({
         <div style={{ height: 8 }} />
         <button className="btn btn-danger" onClick={onReset}>↺ Reset</button>
 
+        {state.paymentLink && (
+          <div style={{ marginTop: 16, padding: 12, background: 'rgba(45,90,61,0.08)', borderRadius: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', marginBottom: 6 }}>PAYMENT READY</div>
+            <a href={state.paymentLink.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ fontSize: 12, padding: '8px 12px' }}>
+              💳 Pay ₹{(state.paymentLink.amount_paise / 100).toFixed(0)}
+            </a>
+          </div>
+        )}
+
         <div style={{ marginTop: 24 }}>
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: 'var(--ink-subtle)', marginBottom: 8 }}>
             Live Reasoning

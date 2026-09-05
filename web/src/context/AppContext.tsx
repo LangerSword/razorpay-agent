@@ -25,6 +25,7 @@ const initialState: AppState = {
   activeFilter: 'all',
   settings: defaultSettings,
   settingsOpen: false,
+  paymentLink: null,
 }
 
 function reducer(state: AppState, action: Action): AppState {
@@ -57,6 +58,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, settings: action.settings }
     case 'SET_SETTINGS_OPEN':
       return { ...state, settingsOpen: action.open }
+    case 'SET_PAYMENT_LINK':
+      return { ...state, paymentLink: action.paymentLink }
     case 'RESET':
       return { ...initialState }
     default:
@@ -98,8 +101,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     style: string
   }) => {
     dispatch({ type: 'SET_RUNNING', running: true })
+    dispatch({ type: 'SET_PAYMENT_LINK', paymentLink: null })
 
     try {
+      // Step 1: Shop greeting (merchant agent curating)
+      dispatch({ type: 'SET_MERCHANT_STATUS', status: 'active', text: 'Curating products...' })
+      
       const greetRes = await fetch('/api/shop/greet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -116,10 +123,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const now = new Date().toLocaleTimeString('en-US', { hour12: false })
       dispatch({ type: 'ADD_LOG', entry: { time: now, message: `Shop assistant: ${greetData.greeting}`, type: 'merchant' } })
+      
+      // Small delay to show merchant thinking
+      await new Promise(r => setTimeout(r, 1200))
       dispatch({ type: 'SET_MERCHANT_STATUS', status: 'waiting', text: 'Waiting for buyer' })
 
-      await new Promise(r => setTimeout(r, 800))
-
+      // Step 2: Start buyer agent
       const startRes = await fetch('/api/autonomous/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -148,7 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           lastCount = messages.length
           for (const m of messages) {
-            if (m.message.includes('🏁 Complete') || m.message.includes('🏁 No items')) done = true
+            if (m.message.includes('🏁 Complete') || m.message.includes('🏁 No items') || m.message.includes('Payment not received')) done = true
           }
           if (done) break
         } catch {
@@ -225,6 +234,13 @@ function processMessage(
     return
   }
 
+  // Payment link for manual payment
+  if (msg.includes('🔗 Payment link:')) {
+    dispatch({ type: 'ADD_LOG', entry: { time: now, message: `🔗 Payment link ready`, type: 'system' } })
+    showToast('Payment link ready - click to pay')
+    return
+  }
+
   if (msg.includes('✅ Payment completed')) {
     dispatch({ type: 'SET_BUYER_STATUS', status: 'idle', text: 'Done' })
     dispatch({ type: 'SET_MERCHANT_STATUS', status: 'idle', text: 'Done' })
@@ -232,6 +248,13 @@ function processMessage(
     showToast(`🎉 Order complete — ${count} item${count !== '1' ? 's' : ''} purchased!`)
     dispatch({ type: 'CLEAR_CART' })
     dispatch({ type: 'SET_CART_OPEN', open: true })
+    return
+  }
+
+  if (msg.includes('Payment not received')) {
+    dispatch({ type: 'SET_BUYER_STATUS', status: 'idle', text: 'Payment pending' })
+    dispatch({ type: 'SET_MERCHANT_STATUS', status: 'idle', text: 'Waiting' })
+    showToast('Payment not received - check payment link')
     return
   }
 
