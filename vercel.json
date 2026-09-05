@@ -6,12 +6,8 @@
       "use": "@vercel/python"
     },
     {
-      "src": "web/dist/**",
-      "use": "@vercel/static-build",
-      "config": {
-        "outputDirectory": "web/dist",
-        "buildCommand": "echo 'pre-built'"
-      }
+      "src": "web/dist",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -20,37 +16,11 @@
       "dest": "api/index.py"
     },
     {
-      "src": "/assets/(.*)",
-      "headers": {
-        "Content-Type": "application/javascript; charset=utf-8"
-      },
-      "continue": true
-    },
-    {
       "src": "/(.*)",
       "dest": "web/dist/index.html"
     }
   ],
   "env": {
     "RAZORPAY_AGENT_LLM_PROVIDER": "stub"
-  },
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "X-Frame-Options",
-          "value": "ALLOWALL"
-        },
-        {
-          "key": "Content-Security-Policy",
-          "value": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-ancestors *"
-        },
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        }
-      ]
-    }
-  ]
+  }
 }
