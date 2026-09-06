@@ -250,6 +250,7 @@ def _build_app_common(
     temperature: float = 0.0,
     rng: random.Random | None = None,
     use_db: bool = True,
+    byok_store: dict[str, dict] | None = None,
 ):
     provider, is_live = build_payment_provider()
 
