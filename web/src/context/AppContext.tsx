@@ -236,13 +236,14 @@ function processMessage(
 
   // Payment link for manual payment — extract URL and dispatch
   if (msg.includes('🔗 Payment link:')) {
-    const urlMatch = msg.match(/🔗 Payment link:\s*(.+)/)
+    // Message format: "🔗 Payment link: <url> (₹XXXX)"
+    const urlMatch = msg.match(/🔗 Payment link:\s*([^\s(]+)/)
     const url = urlMatch?.[1]?.trim() ?? ''
     if (url) {
       dispatch({
         type: 'SET_PAYMENT_LINK',
         paymentLink: {
-          id: url.split('/').pop() || 'plink_unknown',
+          id: url.split('/').pop()?.split('?')[0] || 'plink_unknown',
           url,
           status: 'created',
           amount_paise: 0,

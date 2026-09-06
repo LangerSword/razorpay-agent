@@ -13,8 +13,12 @@ _LLM_ENV_PREFIXES = (
     "NOUS_PORTAL_",
     "OPENAI_",
     "ANTHROPIC_",
+    "EXPLABS_",
     "RAZORPAY_AGENT_LLM_PROVIDER",
 )
+
+# Module-level BYOK store — shared with api/index.py so UI-driven BYOK works
+_byok_store: dict[str, Any] = {}
 
 
 def load_dotenv_into_env(path: str | Path = ".env") -> None:
@@ -443,13 +447,20 @@ def resolve_provider(
     name: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> LLMBackend:
-    """Resolve an LLM backend with precedence: explicit -> config -> env -> default (lazy).
-
-    Default is LazyBackend which re-resolves on each call — so BYOK set via UI
-    takes effect immediately. Falls back to StubBackend if no key configured.
-    """
+    """Resolve an LLM backend with precedence: explicit -> config -> env -> default (lazy)."""
     config = config or {}
     load_dotenv_into_env()
+    
+    # Check module-level BYOK store first (set by UI at runtime)
+    if _byok_store.get("api_key"):
+        resolved_provider = _byok_store.get("provider", "openai")
+        if resolved_provider in ("openai", "anthropic", "tencent", "nous"):
+            try:
+                backend_cls = get_provider(resolved_provider)
+                return backend_cls(config=dict(_byok_store))
+            except Exception:
+                pass
+    
     resolved = (
         name
         or config.get("provider")
@@ -463,7 +474,6 @@ def resolve_provider(
             return backend_cls(config=config)
         except Exception:
             pass
-    # Use lazy by default (will re-resolve to stub or real backend on each call)
     try:
         return LazyBackend()
     except Exception:
