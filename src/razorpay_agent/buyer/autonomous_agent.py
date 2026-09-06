@@ -373,7 +373,11 @@ Use tools to check your budget and purchase history, then decide: ADD_TO_CART or
         else:
             # Prefer razorpay_url for modal, fallback to internal checkout
             url = link_data.get('razorpay_url') or link_data.get('url', '')
-            self._note(f"🔗 Payment link: {url}")
+            amount_paise = link_data.get('amount_paise', 0)
+            if amount_paise > 0:
+                self._note(f"🔗 Payment link: {url} (₹{amount_paise / 100:.0f})")
+            else:
+                self._note(f"🔗 Payment link: {url}")
         
         if 'session_id' not in self._payment_link:
             self._payment_link['session_id'] = session_id

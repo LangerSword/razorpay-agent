@@ -234,8 +234,22 @@ function processMessage(
     return
   }
 
-  // Payment link for manual payment
+  // Payment link for manual payment — extract URL and dispatch
   if (msg.includes('🔗 Payment link:')) {
+    const urlMatch = msg.match(/🔗 Payment link:\s*(.+)/)
+    const url = urlMatch?.[1]?.trim() ?? ''
+    if (url) {
+      dispatch({
+        type: 'SET_PAYMENT_LINK',
+        paymentLink: {
+          id: url.split('/').pop() || 'plink_unknown',
+          url,
+          status: 'created',
+          amount_paise: 0,
+          session_id: '',
+        },
+      })
+    }
     dispatch({ type: 'ADD_LOG', entry: { time: now, message: `🔗 Payment link ready`, type: 'system' } })
     showToast('Payment link ready - click to pay')
     return

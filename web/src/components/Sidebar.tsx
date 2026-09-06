@@ -73,9 +73,12 @@ export default function Sidebar({
         {state.paymentLink && (
           <div style={{ marginTop: 16, padding: 12, background: 'rgba(45,90,61,0.08)', borderRadius: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', marginBottom: 6 }}>PAYMENT READY</div>
-            <a href={state.paymentLink.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ fontSize: 12, padding: '8px 12px' }}>
-              💳 Pay ₹{(state.paymentLink.amount_paise / 100).toFixed(0)}
+            <a href={state.paymentLink.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ fontSize: 12, padding: '8px 12px', display: 'block', textAlign: 'center', marginBottom: 4 }}>
+              💳 Pay now
             </a>
+            <div style={{ fontSize: 10, color: 'var(--ink-subtle)', textAlign: 'center' }}>
+              Razorpay checkout
+            </div>
           </div>
         )}
 

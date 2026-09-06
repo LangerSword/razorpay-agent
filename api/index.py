@@ -1,3 +1,5 @@
+"""Vercel serverless entry point for razorpay-agent."""
+
 from __future__ import annotations
 
 import os
@@ -14,6 +16,15 @@ from fastapi.staticfiles import StaticFiles
 from razorpay_agent.server import build_serverless_app
 
 _byok_store: dict[str, Any] = {}
+
+# Provider name -> env prefix for API keys
+PROVIDER_ENV_PREFIX = {
+    "openai": "OPENAI",
+    "anthropic": "ANTHROPIC",
+    "nous": "NOUS_PORTAL",
+    "tencent": "TENCENT_HY3",
+    "custom": "OPENAI",
+}
 
 _app, _, _ = build_serverless_app(byok_store=_byok_store)
 app = _app
@@ -60,11 +71,17 @@ async def set_llm_settings(request: Request) -> dict:
         raise HTTPException(400, "apiKey required")
     provider_map = {"openai": "openai", "anthropic": "anthropic", "nous": "nous", "tencent": "tencent", "custom": "openai"}
     normalized = provider_map.get(provider, "openai")
+    env_prefix = PROVIDER_ENV_PREFIX.get(normalized, normalized.upper())
     _byok_store["provider"] = normalized
     _byok_store["api_key"] = api_key
     _byok_store["base_url"] = body.get("baseUrl", "").strip()
     _byok_store["model"] = body.get("model", "").strip()
-    os.environ[normalized.upper() + "_API_KEY"] = api_key
+    os.environ[env_prefix + "_API_KEY"] = api_key
+    os.environ["RAZORPAY_AGENT_LLM_PROVIDER"] = normalized
+    if _byok_store["base_url"]:
+        os.environ[env_prefix + "_BASE_URL"] = _byok_store["base_url"]
+    if _byok_store["model"]:
+        os.environ[env_prefix + "_MODEL"] = _byok_store["model"]
     return {"status": "ok", "provider": normalized, "key_masked": mask_key(api_key)}
 
 
