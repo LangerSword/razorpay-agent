@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -17,18 +17,11 @@ from razorpay_agent.server import build_serverless_app
 
 _byok_store: dict[str, Any] = {}
 
-try:
-    _app, _, _ = build_serverless_app(byok_store=_byok_store)
-    app = _app
-    application = _app
-except Exception as e:
-    import traceback
-    print(f"[FATAL] Failed to build app: {type(e).__name__}: {e}")
-    traceback.print_exc(sys.stderr)
-    raise
+_app, _, _ = build_serverless_app(byok_store=_byok_store)
+app = _app
+application = _app
 
-# Mount static files
-DIST_DIR = Path(__file__).parent.parent / "web" / "dist"
+DIST_DIR = Path(__file__).parent / "web" / "dist"
 if DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
 
@@ -62,7 +55,6 @@ def mask_key(key: str) -> str:
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint for debugging."""
     from razorpay_agent.reasoning import llm as llm_module
     return {
         "status": "ok",
@@ -84,8 +76,6 @@ async def set_llm_settings(request: Request) -> dict:
     api_key = body.get("apiKey", "").strip()
     if not api_key:
         raise HTTPException(400, "apiKey required")
-    
-    # Map provider to internal name and env prefix
     PROVIDER_MAP = {
         "openai": ("openai", "OPENAI"),
         "anthropic": ("anthropic", "ANTHROPIC"),
@@ -94,22 +84,17 @@ async def set_llm_settings(request: Request) -> dict:
         "custom": ("openai", "OPENAI"),
     }
     normalized, env_prefix = PROVIDER_MAP.get(provider, ("openai", "OPENAI"))
-    
-    # Update module-level store in llm module
     from razorpay_agent.reasoning import llm as llm_module
     llm_module._byok_store["provider"] = normalized
     llm_module._byok_store["api_key"] = api_key
     llm_module._byok_store["base_url"] = body.get("baseUrl", "").strip()
     llm_module._byok_store["model"] = body.get("model", "").strip()
-    
-    # Set env vars as fallback
     os.environ[env_prefix + "_API_KEY"] = api_key
     os.environ["RAZORPAY_AGENT_LLM_PROVIDER"] = normalized
     if llm_module._byok_store["base_url"]:
         os.environ[env_prefix + "_BASE_URL"] = llm_module._byok_store["base_url"]
     if llm_module._byok_store["model"]:
         os.environ[env_prefix + "_MODEL"] = llm_module._byok_store["model"]
-    
     return {"status": "ok", "provider": normalized, "key_masked": mask_key(api_key)}
 
 
@@ -118,11 +103,7 @@ async def get_llm_settings() -> dict:
     from razorpay_agent.reasoning import llm as llm_module
     provider = llm_module._byok_store.get("provider", os.environ.get("RAZORPAY_AGENT_LLM_PROVIDER", "lazy"))
     api_key = llm_module._byok_store.get("api_key", "")
-    return {
-        "provider": provider,
-        "key_masked": mask_key(api_key) if api_key else "stub",
-        "has_key": bool(api_key),
-    }
+    return {"provider": provider, "key_masked": mask_key(api_key) if api_key else "stub", "has_key": bool(api_key)}
 
 
 @app.delete("/api/settings/llm")
