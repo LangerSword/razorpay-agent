@@ -169,5 +169,12 @@ class RazorpayTestProvider(PaymentProvider):
                 "status": order["status"],
                 "amount_paid": order.get("amount_paid", 0),
             }
-        except Exception:
-            return {"id": link_id, "status": "unknown"}
+        except Exception as e:
+            error_msg = str(e)
+            if "NoSuchKey" in error_msg or "not found" in error_msg.lower():
+                return {
+                    "id": link_id,
+                    "status": "not_found",
+                    "error": "Order not found in Razorpay. Check your API keys and RAZORPAY_AGENT_USE_LIVE_PAYMENTS setting.",
+                }
+            return {"id": link_id, "status": "unknown", "error": error_msg}

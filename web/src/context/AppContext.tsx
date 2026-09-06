@@ -235,11 +235,12 @@ function processMessage(
   }
 
   // Payment link for manual payment — extract URL and dispatch
-  if (msg.includes('🔗 Payment link:')) {
-    // Message format: "🔗 Payment link: <url> (₹XXXX)"
-    const urlMatch = msg.match(/🔗 Payment link:\s*([^\s(]+)/)
-    const url = urlMatch?.[1]?.trim() ?? ''
-    if (url) {
+  const linkIdx = msg.indexOf('🔗 Payment link:')
+  if (linkIdx !== -1) {
+    const after = msg.slice(linkIdx + '🔗 Payment link:'.length).trim()
+    // URL ends at first whitespace or open paren (before amount)
+    const url = after.split(/[\s(]/)[0]
+    if (url && url.startsWith('http')) {
       dispatch({
         type: 'SET_PAYMENT_LINK',
         paymentLink: {
@@ -250,9 +251,9 @@ function processMessage(
           session_id: '',
         },
       })
+      dispatch({ type: 'ADD_LOG', entry: { time: now, message: `🔗 Payment link ready`, type: 'system' } })
+      showToast('Payment link ready - click to pay')
     }
-    dispatch({ type: 'ADD_LOG', entry: { time: now, message: `🔗 Payment link ready`, type: 'system' } })
-    showToast('Payment link ready - click to pay')
     return
   }
 
