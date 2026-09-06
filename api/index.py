@@ -1,9 +1,10 @@
+"""Vercel serverless entry point for razorpay-agent."""
+
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 # Add src/ to path for Vercel's Python runtime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -16,7 +17,7 @@ from mangum import Mangum
 
 from razorpay_agent.server import build_serverless_app
 
-_byok_store: dict[str, dict] = {}
+_byok_store: dict[str, Any] = {}
 
 _app, _, _ = build_serverless_app(byok_store=_byok_store)
 app = _app
@@ -35,7 +36,10 @@ async def serve_index():
     index_file = DIST_DIR / "index.html"
     if index_file.exists():
         return HTMLResponse(content=index_file.read_text(), status_code=200)
-    return HTMLResponse(content="<h1>Common — Razorpay Agent</h1><p>API running.</p>", status_code=200)
+    return HTMLResponse(
+        content="<h1>Common — Razorpay Agent</h1><p>API running.</p>",
+        status_code=200,
+    )
 
 
 @app.get("/{full_path:path}")
@@ -44,17 +48,17 @@ async def serve_spa(full_path: str, request: Request):
     # Don't intercept API routes
     if full_path.startswith("api/"):
         raise HTTPException(404, "API endpoint not found")
-    
+
     # Try to serve the static file
     file_path = DIST_DIR / full_path
     if file_path.exists() and file_path.is_file():
         return FileResponse(str(file_path))
-    
+
     # Fallback to index.html for SPA routing
     index_file = DIST_DIR / "index.html"
     if index_file.exists():
         return HTMLResponse(content=index_file.read_text(), status_code=200)
-    
+
     raise HTTPException(404, "Not found")
 
 
@@ -65,11 +69,7 @@ def mask_key(key: str) -> str:
 
 
 @app.post("/api/settings/llm")
-async def set_llm_settings(request: Any) -> dict:
-    from fastapi import Request as _Request
-    if not isinstance(request, _Request):
-        raise HTTPException(400, "invalid request")
-
+async def set_llm_settings(request: Request) -> dict:
     body = await request.json()
     provider = body.get("provider", "openai")
     api_key = body.get("apiKey", "").strip()
@@ -104,7 +104,9 @@ async def set_llm_settings(request: Any) -> dict:
 
 @app.get("/api/settings/llm")
 async def get_llm_settings() -> dict:
-    provider = _byok_store.get("provider", os.environ.get("RAZORPAY_AGENT_LLM_PROVIDER", "stub"))
+    provider = _byok_store.get(
+        "provider", os.environ.get("RAZORPAY_AGENT_LLM_PROVIDER", "lazy")
+    )
     api_key = _byok_store.get("api_key", "")
     return {
         "provider": provider,
@@ -116,6 +118,11 @@ async def get_llm_settings() -> dict:
 @app.delete("/api/settings/llm")
 async def clear_llm_settings() -> dict:
     _byok_store.clear()
-    for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "NOUS_PORTAL_API_KEY", "TENCENT_HY3_API_KEY"]:
+    for key in [
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "NOUS_PORTAL_API_KEY",
+        "TENCENT_HY3_API_KEY",
+    ]:
         os.environ.pop(key, None)
     return {"status": "cleared", "message": "Using stub backend"}
