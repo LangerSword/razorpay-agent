@@ -20,10 +20,16 @@ from razorpay_agent.server import build_serverless_app
 
 _byok_store: dict[str, Any] = {}
 
-_app, _, _ = build_serverless_app(byok_store=_byok_store)
-app = _app
-application = _app
-handler = Mangum(_app, lifespan="off")
+try:
+    _app, _, _ = build_serverless_app(byok_store=_byok_store)
+    app = _app
+    application = _app
+    handler = Mangum(_app, lifespan="off")
+except Exception as e:
+    print(f"[ERROR] Failed to build app: {type(e).__name__}: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
 # Serve static files from web/dist/ if they exist
 DIST_DIR = Path(__file__).parent.parent / "web" / "dist"
